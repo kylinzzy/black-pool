@@ -105,6 +105,14 @@ function isDone(l) {
   return l.doneBy && typeof l.doneBy === 'object' && !!l.doneBy[state.me.nick];
 }
 
+/** 某条链接是否「还活着」（没有任何人处理过、也没被捞过）——过期打捞用 */
+function isAlive(l) {
+  if (l.salvagedBy) return false;
+  if (l.doneBy && typeof l.doneBy === 'object') return !Object.keys(l.doneBy).length;
+  if (typeof l.doneBy === 'string') return !l.doneBy;
+  return true;
+}
+
 /** 倒计时阈值：剩余不足 24 小时 */
 function postState(p) {
   if (p.links.length && p.links.every(isDone)) return 'done';
@@ -441,10 +449,11 @@ function postCard(p) {
     '<div class="progress"><i style="width:' + pct + '%"></i></div>' +
     '<ul class="links">' + p.links.map((l) => {
       const metaLine = l.meta ? [l.meta.author, l.meta.ip, l.meta.postTime, l.meta.group].filter(Boolean).join(' · ') : '';
+      const salv = l.salvagedBy ? ' <span class="fish-tag" title="由 ' + esc(l.salvagedBy) + ' 打捞进新批次">🎣 已打捞</span>' : '';
       return '<li class="' + (isDone(l) ? 'ok' : '') + '">' +
         '<input type="checkbox" ' + (isDone(l) ? 'checked' : '') + ' data-act="toggle" data-id="' + p.id + '" data-lid="' + l.id + '">' +
         '<span style="min-width:0;flex:1">' +
-          (l.title ? '<div class="ltitle">' + esc(l.title) + '</div>' : '') +
+          (l.title ? '<div class="ltitle">' + esc(l.title) + salv + '</div>' : salv) +
           '<span class="url" title="' + esc(l.url) + '">' + esc(l.url) + '</span>' +
           (metaLine ? '<div class="lmeta">' + esc(metaLine) + '</div>' : '') +
         '</span>' +
@@ -457,6 +466,7 @@ function postCard(p) {
       '<button class="btn sm" data-act="copy-all" data-id="' + p.id + '">📋 复制本组链接</button>' +
       '<button class="btn sm" data-act="report" data-id="' + p.id + '">🚨 一键投诉（跳转脚本）</button>' +
       (staff ? '<button class="btn sm ghost" data-act="add-link" data-id="' + p.id + '">+ 补链接</button>' : '') +
+      (staff && st === 'expired' && p.links.some(isAlive) ? '<button class="btn sm" data-act="salvage-modal" data-id="' + p.id + '" title="把还没人处理的链接重新聚合成新批次">🎣 打捞未处理</button>' : '') +
       (canDel ? '<button class="btn sm danger" data-act="del-post" data-id="' + p.id + '">删除公告</button>' : '') +
     '</div></div>';
 }
@@ -967,6 +977,34 @@ async function doReport() {
              : '已跳转，链接复制失败可回来点「复制本组链接」', 'ok');
 }
 
+/* ---------------- 过期打捞弹窗 ---------------- */
+function openSalvageModal(post) {
+  const alive = post.links.filter(isAlive);
+  if (!alive.length) { tip('这条公告没有可打捞的链接', 'err'); return; }
+  state.salvagePost = post.id;
+  $('#modal').innerHTML =
+    '<div class="modal">' +
+      '<h3>🎣 打捞过期公告</h3>' +
+      '<p class="hint">「' + esc(post.title) + '」已过期，还有 ' + alive.length + ' 条没人处理的活链接。勾选后打捞，会按同板块 + 同类型重新聚合成新批次（标题带「打捞·」前缀），7 天倒计时重新开始。</p>' +
+      '<div id="salvage-box">' + alive.map((l) =>
+        '<label class="reason-item"><input type="checkbox" value="' + l.id + '" checked> ' +
+        '<span style="min-width:0;flex:1">' + esc(l.title || l.url) + '</span></label>').join('') + '</div>' +
+      '<div class="row" style="margin-top:14px">' +
+        '<button class="btn" data-act="do-salvage">🎣 打捞所选（' + alive.length + ' 条）</button>' +
+        '<button class="btn ghost" data-act="close-modal">取消</button>' +
+      '</div></div>';
+  $('#mask').hidden = false;
+}
+
+async function doSalvage() {
+  const ids = [...document.querySelectorAll('#salvage-box input:checked')].map((b) => b.value);
+  if (!ids.length) throw new Error('至少勾选一条要打捞的链接');
+  const r = await api('posts', { action: 'salvage', id: state.salvagePost, linkIds: ids });
+  $('#mask').hidden = true;
+  await refreshAll();
+  tip('已打捞 ' + r.count + ' 条链接，聚合成 ' + (r.created.length + r.filled.length) + ' 个新批次', 'ok');
+}
+
 /* ---------------- 事件 ---------------- */
 document.addEventListener('click', guard(async (e) => {
   const el = e.target.closest('[data-act]');
@@ -1074,6 +1112,8 @@ document.addEventListener('click', guard(async (e) => {
     return;
   }
   if (act === 'report') { openReportModal(state.posts.find((x) => x.id === el.dataset.id)); return; }
+  if (act === 'salvage-modal') { openSalvageModal(state.posts.find((x) => x.id === el.dataset.id)); return; }
+  if (act === 'do-salvage') { await doSalvage(); return; }
   if (act === 'rename-post') {
     const id = el.dataset.id;
     const post = (state.posts || []).find((x) => x.id === id);
