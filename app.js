@@ -188,7 +188,28 @@ async function refreshAll() {
   state.messages = res[2].messages || [];
   if (isStaff) { state.users = res[3].users || []; checkNewRegs(res[4].registrations || []); state.regs = res[4].registrations || []; }
   if (state.me && state.me.role === 'admin') state.apps = (res[res.length - 1].applications) || [];
+  if (state.me && (state.me.role === 'admin' || state.me.role === 'deputy')) {
+    loadReport().then(safeRender).catch(() => {});
+  }
   safeRender();
+}
+
+/** 加载报表：日汇总 + 当前选中月份的月汇报 */
+async function loadReport() {
+  const daily = await api('report', { action: 'daily' });
+  state.report = state.report || {};
+  state.report.byDay = daily.byDay || [];
+  state.report.months = daily.months || [];
+  if (!state.report.selMonth || state.report.months.indexOf(state.report.selMonth) < 0) {
+    state.report.selMonth = state.report.months[0] || '';
+  }
+  if (state.report.selMonth) {
+    const m = await api('report', { action: 'month', month: state.report.selMonth });
+    state.report.uploads = m.uploads;
+    state.report.participants = m.participants;
+    state.report.list = m.list || [];
+    state.report.byDayMonth = m.byDay || [];
+  }
 }
 
 /** 用户正在输入框打字时不重绘，避免内容被清掉；重绘后保持滚动位置 */
@@ -370,13 +391,19 @@ function postCard(p) {
       ' · <b>' + fmtRemain(remainMs(p)) + '</b> · 我完成 ' + done + '/' + total + '</div>' +
     (p.note ? '<div class="meta">📝 ' + esc(p.note) + '</div>' : '') +
     '<div class="progress"><i style="width:' + pct + '%"></i></div>' +
-    '<ul class="links">' + p.links.map((l) =>
-      '<li class="' + (isDone(l) ? 'ok' : '') + '">' +
+    '<ul class="links">' + p.links.map((l) => {
+      const metaLine = l.meta ? [l.meta.author, l.meta.ip, l.meta.postTime, l.meta.group].filter(Boolean).join(' · ') : '';
+      return '<li class="' + (isDone(l) ? 'ok' : '') + '">' +
         '<input type="checkbox" ' + (isDone(l) ? 'checked' : '') + ' data-act="toggle" data-id="' + p.id + '" data-lid="' + l.id + '">' +
-        '<span class="url" title="' + esc(l.url) + '">' + esc(l.url) + '</span>' +
+        '<span style="min-width:0;flex:1">' +
+          (l.title ? '<div class="ltitle">' + esc(l.title) + '</div>' : '') +
+          '<span class="url" title="' + esc(l.url) + '">' + esc(l.url) + '</span>' +
+          (metaLine ? '<div class="lmeta">' + esc(metaLine) + '</div>' : '') +
+        '</span>' +
         '<button class="btn sm ghost" data-act="copy-one" data-url="' + esc(l.url) + '">复制</button>' +
         '<button class="btn sm ghost" data-act="open-one" data-url="' + esc(l.url) + '">打开</button>' +
-      '</li>').join('') + '</ul>' +
+      '</li>';
+    }).join('') + '</ul>' +
     '<div class="row" style="margin-top:10px">' +
       '<button class="btn sm" data-act="copy-all" data-id="' + p.id + '">📋 复制本组链接</button>' +
       '<button class="btn sm" data-act="report" data-id="' + p.id + '">🚨 一键投诉（跳转脚本）</button>' +
@@ -553,6 +580,45 @@ function viewAdmin() {
         '<button class="btn sm ghost" data-act="reject" data-id="' + a.id + '">拒绝</button>' +
         '</div></div>').join('') : '<div class="empty">暂无待审批申请</div>') + '</div>';
   }
+
+  // 📊 日汇总 + 月汇报（仅最高管理员 / 次管理员）
+  if (approver) {
+    const rep = state.report || {};
+    const byDay = rep.byDay || [];
+    const mlist = rep.list || [];
+    html += '<div class="card"><h3>📊 日汇总（近 30 天）</h3>' +
+      (byDay.length ? '<table class="rep-table"><tr><th>日期</th><th>上传黑帖</th><th>参与人数</th></tr>' +
+        byDay.slice().reverse().map((d) =>
+          '<tr><td>' + d.date + '</td><td>' + d.uploads + '</td><td>' + d.people + '</td></tr>').join('') +
+        '</table>' : '<div class="empty">暂无数据</div>') +
+      '</div>';
+
+    const months = rep.months || [new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 7)];
+    const cur = rep.selMonth || months[0];
+    html += '<div class="card"><h3>🗓 月汇报</h3>' +
+      '<div class="row"><select id="rep-month" style="flex:1">' +
+        months.map((m) => '<option value="' + m + '"' + (m === cur ? ' selected' : '') + '>' + m + '</option>').join('') +
+      '</select>' +
+      '<button class="btn" data-act="rep-load">查看</button>' +
+      '<button class="btn ghost" data-act="rep-export">⬇ 下载 Excel（CSV）</button></div>' +
+      '<div class="stats" style="margin-top:10px">' +
+        '<div class="stat"><b>本月上传黑帖</b><span>' + (rep.uploads != null ? rep.uploads : '—') + '</span></div>' +
+        '<div class="stat"><b>本月参与人数</b><span>' + (rep.participants != null ? rep.participants : '—') + '</span></div>' +
+      '</div>' +
+      (mlist.length ? '<table class="rep-table" style="margin-top:10px"><tr><th>#</th><th>标题/链接</th><th>发帖人</th><th>IP</th><th>发帖时间</th><th>小组</th><th>上传人</th></tr>' +
+        mlist.map((l) =>
+          '<tr><td>' + l.seq + '</td>' +
+          '<td style="max-width:220px;word-break:break-all">' + (l.title ? esc(l.title) + '<br>' : '') +
+            '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.url) + '</a></td>' +
+          '<td>' + esc(l.author || '—') + '</td><td>' + esc(l.ip || '—') + '</td>' +
+          '<td>' + esc(l.postTime || '—') + '</td><td>' + esc(l.group || '—') + '</td>' +
+          '<td>' + esc(l.by || '—') + '</td></tr>').join('') + '</table>'
+        : '<p class="hint">该月暂无上传记录。</p>') +
+      '<p class="hint">CSV 用 Excel / WPS 直接打开，含：序列号、帖子链接、标题、发帖人、发帖IP、发帖时间、所属豆瓣小组、上传人、上传时间。黑帖的作者/IP/时间/小组来自豆瓣页面抓取，抓不到的显示 —，可点下方按钮补抓。</p>' +
+      '<div class="row"><button class="btn ghost" data-act="rep-refresh-info">🔄 补抓缺失的黑帖信息</button></div>' +
+      '</div>';
+  }
+
   return html;
 }
 
@@ -855,6 +921,44 @@ document.addEventListener('click', guard(async (e) => {
       showSkippedModal(skipList);
     }
     tip(msg, r.added ? 'ok' : 'warn');
+    return;
+  }
+
+  if (act === 'rep-load') {
+    const sel = document.getElementById('rep-month');
+    state.report.selMonth = sel ? sel.value : state.report.selMonth;
+    await loadReport();
+    safeRender(); tip('已加载 ' + state.report.selMonth + ' 月报', 'ok');
+    return;
+  }
+  if (act === 'rep-export') {
+    tip('正在生成 CSV…', 'ok');
+    const res = await fetch(API + '/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-token': state.token },
+      body: JSON.stringify({ action: 'export', month: state.report.selMonth }),
+    });
+    if (!res.ok) throw new Error('导出失败');
+    const text = await res.text();
+    const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '黑水塘月报-' + state.report.selMonth + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    tip('已下载', 'ok');
+    return;
+  }
+  if (act === 'rep-refresh-info') {
+    tip('开始补抓缺失信息（每批最多10条）…', 'ok');
+    let total = 0;
+    for (const p of state.posts) {
+      try {
+        const r = await api('posts', { action: 'refreshInfo', id: p.id });
+        total += r.updated || 0;
+      } catch (e) { /* 单组失败不影响其他 */ }
+    }
+    await refreshAll();
+    tip('补抓完成，更新 ' + total + ' 条', 'ok');
     return;
   }
 
