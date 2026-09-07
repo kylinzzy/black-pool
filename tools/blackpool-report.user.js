@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         净化阿北 · 投诉助手
 // @namespace    https://github.com/kylinwu
-// @version      2.6.4
-// @description  豆瓣小组帖子一键批量投诉 v2.6.4 — 与「净化阿北」网站联动，从网站跳转过来自动导入链接与投诉理由并开始批量投诉
+// @version      2.6.5
+// @description  豆瓣小组帖子一键批量投诉 v2.6.5 — 与「净化阿北」网站联动，从网站跳转过来自动导入链接与投诉理由并开始批量投诉
 // @author       kylinwu💚爱妻
 // @match        https://www.douban.com/group/topic/*
 // @match        https://www.douban.com/group/*/topic/*
@@ -43,7 +43,7 @@
    *   关闭按钮: .drc-modal-close
    */
 
-  var VERSION = '2.6.4';
+  var VERSION = '2.6.5';
   var AUTHOR = 'kylinwu💚爱妻';
   var stopFlag = false;
 
@@ -606,7 +606,7 @@
     var t = '';
     try { t = (document.body && document.body.innerText) || ''; } catch (e) { t = ''; }
     t = t.slice(0, 3000);
-    return /该内容已被删除|此内容已被删除|已被管理员删除|内容已被删除|帖子已被删除|该话题已被删除|主题不存在|内容不存在|页面不存在|你访问的页面飘走了/.test(t);
+    return /该内容已被删除|此内容已被删除|已被管理员删除|内容已被删除|帖子已被删除|该话题已被删除|主题不存在|内容不存在|页面不存在|你访问的页面飘走了|你没有权限访问|没有权限访问|无权访问/.test(t);
   }
 
   /** 回报黑水塘：这条链接已被删除（带导入时的 token/postId/linkId） */
@@ -1227,7 +1227,6 @@
           '<div style="font-size:24px;margin-bottom:8px">✅</div>' +
           '<div style="font-size:13px;color:#2e7d32;font-weight:bold">批量执行完毕</div>' +
           '<div style="font-size:11px;color:#558b55;margin:4px 0">完成 ' + links.length + ' 个帖子</div>' +
-          '<div style="font-size:10.5px;color:#7a8b7a;margin:6px 8px 0;text-align:left;line-height:1.6">📮 豆邮说明：豆瓣不保证每次投诉都发送「投诉受理通知」，重复投诉尤其可能没有——没收到豆邮≠失败，以面板日志的每轮真实结果为准。</div>' +
           '<button onclick="location.reload()" ' +
             'style="margin-top:12px;padding:5px 16px;background:#4caf50;color:#fff;border:none;' +
             'border-radius:5px;cursor:pointer;font-size:12px">返回正常模式</button></div>';
@@ -1270,8 +1269,8 @@
 
     // v2.6.3：帖子已被删除 → 不再卡住，回报黑水塘并自动跳下一条
     if (isDeletedPage()) {
-      log('⏭️ 此帖已被删除，自动跳过并回报黑水塘');
-      console.log('[豆瓣投诉] 第' + (idx + 1) + '条已被删除，跳过');
+      log('⏭️ 此帖已失效（被删/无权限），自动跳过并回报黑水塘');
+      console.log('[豆瓣投诉] 第' + (idx + 1) + '条已失效（被删/无权限），跳过');
       reportDeadToBlackPool();
       moveToNextBatchLink();
       return;
