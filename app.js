@@ -221,6 +221,7 @@ async function refreshAll() {
     loadReport().then(safeRender).catch(() => {});
   }
   safeRender();
+  checkUrgentAlerts();
 }
 
 /** 加载报表：日汇总 + 当前选中月份的月汇报 */
@@ -355,6 +356,7 @@ function render() {
         '<section id="sec-msg">' + viewMsg() + '</section>' +
         (staff ? '<section id="sec-admin">' + viewAdmin() + '</section>' : '') +
       '</div></div>' +
+      urgentFloatHtml() +
     '</div>';
   loadPendingImages();
   highlightNav();
@@ -401,9 +403,9 @@ function viewPool(board) {
     counts[s]++;
     if (s !== 'done') { bucket.all.push(p); counts.all++; }
   });
-  // 各分类内部按「最近活动时间」倒序：新发布公告、往老批次补链都会把批次顶到最前
+  // 各分类内部排序：⚡紧急置顶，其余按「最近活动时间」倒序
   const lastTouch = (p) => Math.max(p.createdAt || 0, ...(p.links || []).map((l) => l.addedAt || 0));
-  const byNew = (a, b) => lastTouch(b) - lastTouch(a);
+  const byNew = (a, b) => ((b.urgent ? 1 : 0) - (a.urgent ? 1 : 0)) || (lastTouch(b) - lastTouch(a));
   Object.keys(bucket).forEach((k) => bucket[k].sort(byNew));
   const list = bucket[state.filter] || [];
 
@@ -426,6 +428,7 @@ function viewPool(board) {
         tagList().map((t) => '<option value="' + esc(t.key) + '">' + esc((t.emoji ? t.emoji + ' ' : '') + t.name) + '</option>').join('') +
       '</select>' +
       '<label>备注（可选）</label><input type="text" id="p-note-' + board + '" placeholder="例如：重点投诉挂人引战">' +
+      '<label class="attest" style="margin-top:8px"><input type="checkbox" id="p-urgent-' + board + '"> ⚡ 重要且紧急（发布后<b style="color:var(--danger)">全员弹窗提醒 + 红色浮窗置顶强提醒</b>，直到所有人处理完才消失）</label>' +
       '<div class="row" style="margin-top:10px"><button class="btn" data-act="b-pub" data-board="' + board + '">发布到' + (isFish ? '浑水摸鱼' : '黑水塘') + '</button></div>' +
     '</div>';
   }
@@ -448,13 +451,16 @@ function postCard(p) {
   const canDel = state.me.role === 'admin' || state.me.role === 'deputy'; // 整删仅最高/次级
   const isFish = (p.board || 'zzy') === 'fish';
 
-  return '<div class="card post ' + (st === 'done' ? 'done' : '') + '">' +
+  return '<div class="card post ' + (st === 'done' ? 'done' : '') + (p.urgent ? ' urgent' : '') + '" id="post-' + p.id + '">' +
     '<div class="head"><div class="title">' + (isFish ? '<span class="fish-tag">🐟 浑水摸鱼</span> ' : '') + esc(p.title) +
+      (p.urgent ? ' <span class="fish-tag uf-tag">⚡ 重要且紧急</span>' : '') +
       (tagBadge(p.tag) ? ' <span class="fish-tag">' + esc(tagBadge(p.tag)) + '</span>' : '') + '</div>' +
       '<span style="display:flex;gap:6px;align-items:center;white-space:nowrap">' +
         (staff ? '<button class="btn sm ghost" data-act="rename-post" data-id="' + p.id + '" title="改标题，让大家知道这批投诉什么">✏️</button>' : '') +
+        (staff ? '<button class="btn sm ' + (p.urgent ? 'danger' : 'ghost') + '" data-act="urgent-toggle" data-id="' + p.id + '" data-u="' + (p.urgent ? '0' : '1') + '" title="重要且紧急：全员弹窗 + 红色浮窗强提醒">' + (p.urgent ? '解除⚡紧急' : '⚡设为紧急') + '</button>' : '') +
         '<span class="state ' + st + '">' + STATE_TEXT[st] + '</span>' +
       '</span></div>' +
+    (p.urgent ? '<div class="meta" style="color:var(--danger)">⚡ ' + esc(p.urgentBy || '') + ' 标记为重要且紧急（' + fmtTime(p.urgentAt || p.createdAt) + '）——请全员尽快处理</div>' : '') +
     '<div class="meta">发布者 ' + esc(p.by) + ' · ' + fmtTime(p.createdAt) +
       ' · <b>' + fmtRemain(remainMs(p)) + '</b> · 我完成 ' + done + '/' + total + '</div>' +
     (p.note ? '<div class="meta">📝 ' + esc(p.note) + '</div>' : '') +
@@ -485,6 +491,75 @@ function postCard(p) {
       (staff && st === 'expired' && p.links.some(isAlive) ? '<button class="btn sm" data-act="salvage-modal" data-id="' + p.id + '" title="把还没人处理的链接重新聚合成新批次">🎣 打捞未处理</button>' : '') +
       (canDel ? '<button class="btn sm danger" data-act="del-post" data-id="' + p.id + '">删除公告</button>' : '') +
     '</div></div>';
+}
+
+/** ⚡ 红色置顶浮窗：有「重要且紧急」公告且我还有未处理链接时强提醒，全部处理完自动消失 */
+function urgentFloatHtml() {
+  if (!state.me) return '';
+  const staff = state.me.role !== 'member';
+  const rows = [];
+  state.posts.filter((p) => p.urgent).forEach((p) => {
+    const todo = p.links.filter((l) => isAlive(l) && !isDone(l));
+    if (todo.length) rows.push({ p, todo });
+  });
+  if (!rows.length) return '';
+  const total = rows.reduce((n, r) => n + r.todo.length, 0);
+  return '<div class="urgent-float">' +
+    '<div class="uf-head">⚡ 重要且紧急 · 待处理 ' + total + ' 条</div>' +
+    rows.map((r) =>
+      '<div class="uf-post"><div class="uf-t">' + esc(r.p.title) +
+        ' <span class="muted">' + r.todo.length + ' 条</span>' +
+        ' <a href="javascript:void(0)" data-act="uf-goto" data-id="' + r.p.id + '">📍定位</a>' +
+        (staff ? ' <a href="javascript:void(0)" data-act="urgent-toggle" data-id="' + r.p.id + '" data-u="0">解除</a>' : '') +
+      '</div>' +
+      r.todo.map((l) =>
+        '<div class="uf-row"><a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.title || l.url) + '</a>' +
+        '<span class="row" style="gap:5px;flex:0 0 auto">' +
+          '<button class="btn sm ghost" data-act="copy-one" data-url="' + esc(l.url) + '">复制</button>' +
+          '<input type="checkbox" title="处理完打勾，全部完成浮窗消失" data-act="toggle" data-id="' + r.p.id + '" data-lid="' + l.id + '">' +
+        '</span></div>').join('') +
+      '</div>').join('') +
+    '<div class="uf-foot">打勾完成或「解除紧急」后浮窗消失</div>' +
+  '</div>';
+}
+
+/** ⚡ 全员弹窗：首次刷到「重要且紧急」公告时强提醒（每个公告每台设备只弹一次） */
+function checkUrgentAlerts() {
+  if (!state.me) return;
+  let seen = {};
+  try { seen = JSON.parse(localStorage.getItem('bp_urgent_seen') || '{}'); } catch (e) { seen = {}; }
+  const fresh = state.posts.filter((p) => p.urgent && !seen[p.id]);
+  if (!fresh.length) return;
+  const p = fresh[0];
+  seen[p.id] = Date.now();
+  localStorage.setItem('bp_urgent_seen', JSON.stringify(seen));
+  const todo = p.links.filter((l) => isAlive(l) && !isDone(l));
+  $('#modal').innerHTML =
+    '<div class="modal">' +
+      '<h3 style="color:var(--danger)">⚡ 重要且紧急公告！</h3>' +
+      '<p class="hint"><b>' + esc(p.title) + '</b>（' + esc(p.by) + ' 发布' + (p.urgentBy && p.urgentBy !== p.by ? '，' + esc(p.urgentBy) + ' 标记' : '') + '）被标记为 <b style="color:var(--danger)">重要且紧急</b>，请全员立刻处理！</p>' +
+      (p.note ? '<p class="hint">📝 ' + esc(p.note) + '</p>' : '') +
+      '<p class="hint">你有 ' + todo.length + ' 条待处理。公告已标红并置顶浮窗强提醒，全部处理完浮窗才会消失。</p>' +
+      '<div class="row" style="margin-top:12px">' +
+        '<button class="btn danger" data-act="urgent-go" data-id="' + p.id + '">🚨 立即去处理</button>' +
+        '<button class="btn ghost" data-act="urgent-ack">知道了</button>' +
+      '</div></div>';
+  $('#mask').hidden = false;
+}
+
+/** 定位到某条公告并红色闪烁提示 */
+function gotoPost(id) {
+  const p = state.posts.find((x) => x.id === id);
+  if (!p) return;
+  const sec = document.getElementById((p.board || 'zzy') === 'fish' ? 'sec-fish' : 'sec-pool');
+  if (sec) sec.scrollIntoView({ behavior: 'smooth' });
+  setTimeout(() => {
+    const el = document.getElementById('post-' + id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('flash');
+    setTimeout(() => el.classList.remove('flash'), 2400);
+  }, 80);
 }
 
 /** 成员列表（搜索 + 角色筛选 + 分页，每页 10 人）；isAdmin/approver 决定按钮可见性 */
@@ -1158,6 +1233,15 @@ document.addEventListener('click', guard(async (e) => {
     return;
   }
   if (act === 'mode') { authMode = el.dataset.m; paintAuth(); return; }
+  if (act === 'urgent-ack') { $('#mask').hidden = true; return; }
+  if (act === 'urgent-go') { $('#mask').hidden = true; gotoPost(el.dataset.id); return; }
+  if (act === 'uf-goto') { gotoPost(el.dataset.id); return; }
+  if (act === 'urgent-toggle') {
+    await api('posts', { action: 'setUrgent', id: el.dataset.id, urgent: el.dataset.u === '1' });
+    await refreshAll();
+    tip(el.dataset.u === '1' ? '已标记 ⚡ 重要且紧急，全员会收到弹窗与浮窗强提醒' : '已解除紧急', 'ok');
+    return;
+  }
   if (act === 'reg-status') {
     const nick = ($('#i-nick') ? $('#i-nick').value : '').trim();
     if (nick.length < 2) throw new Error('请先在上方填写你的豆瓣昵称');
@@ -1364,6 +1448,7 @@ document.addEventListener('click', guard(async (e) => {
       links, note: $('#p-note-' + board).value.trim(),
       board,
       tag: ($('#p-tag-' + board) || {}).value || 'mix',
+      urgent: ($('#p-urgent-' + board) || {}).checked || false,
     };
     let r = await api('posts', payload);
     if (r.needConfirm) {
