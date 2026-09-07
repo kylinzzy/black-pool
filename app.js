@@ -818,7 +818,7 @@ function viewAdmin() {
       (n
         ? '<div class="nb-cur">当前公告：<b>' + esc(n.text) + '</b><span class="muted">（' + esc(n.by) + ' · ' + fmtTime(n.at) + ' · ' + ackN + ' 人已知晓）</span></div>'
         : '<div class="muted" style="margin-bottom:4px">当前没有生效的公告</div>') +
-      '<textarea id="notice-text" rows="2" placeholder="输入改版公告内容…（例如：站点已改版，请重装脚本 v2.6.4）">' + (n ? esc(n.text) : '') + '</textarea>' +
+      '<textarea id="notice-text" rows="2" placeholder="输入改版公告内容…（例如：站点已改版，请重装脚本 v2.6.5）">' + (n ? esc(n.text) : '') + '</textarea>' +
       '<div class="row" style="margin-top:8px">' +
         '<button class="btn sm" data-act="notice-save">📢 发布 / 更新公告</button>' +
         (n ? '<button class="btn sm danger" data-act="notice-del">撤下公告</button>' : '') +
