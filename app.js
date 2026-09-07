@@ -596,13 +596,15 @@ function viewAdmin() {
     '<div style="margin-top:10px">' + (state.users || []).map((u) =>
       '<div class="finding"><div class="u"><b>' + esc(u.nick) + '</b>' + roleBadge(u.role) +
       '<div class="muted">加入于 ' + fmtTime(u.createdAt) + '</div></div>' +
-      (u.role === 'admin' ? '' :
+      ((u.role === 'admin' && !isAdmin) ? '' :
         '<div class="row" style="flex-direction:column;gap:6px">' +
+        (isAdmin ? '<button class="btn sm ghost" data-act="rename-user" data-nick="' + esc(u.nick) + '">✏️ 改昵称</button>' : '') +
+        (u.role === 'admin' ? '' :
         (approver && u.role === 'member' ? '<button class="btn sm" data-act="promote" data-nick="' + esc(u.nick) + '">提升为捞黑员</button>' : '') +
         (isAdmin && u.role !== 'deputy' ? '<button class="btn sm ghost" data-act="set-deputy" data-nick="' + esc(u.nick) + '">设为次管理员</button>' : '') +
         (approver && u.role === 'mod' ? '<button class="btn sm ghost" data-act="demote" data-nick="' + esc(u.nick) + '">降级为执法者</button>' : '') +
         (isAdmin && u.role === 'deputy' ? '<button class="btn sm ghost" data-act="demote" data-nick="' + esc(u.nick) + '">卸任次管理员（降为执法者）</button>' : '') +
-        '<button class="btn sm danger" data-act="remove-user" data-nick="' + esc(u.nick) + '">剔除</button>' +
+        '<button class="btn sm danger" data-act="remove-user" data-nick="' + esc(u.nick) + '">剔除</button>') +
         '</div>') +
       '</div>').join('') + '</div></div>';
 
@@ -1177,6 +1179,19 @@ document.addEventListener('click', guard(async (e) => {
     return;
   }
 
+  if (act === 'rename-user') {
+    const old = el.dataset.nick;
+    const next = prompt('把「' + old + '」改成：', old);
+    if (!next) return;
+    const n = next.trim();
+    if (n === old) return;
+    if (n.length < 2) throw new Error('昵称至少 2 个字符');
+    if (!confirm('确认把昵称「' + old + '」改为「' + n + '」？\n\nTA 的历史上传记录、战绩、留言都会一并更新为新昵称，登录密码不变。')) return;
+    await api('admin', { action: 'renameUser', nick: old, next: n });
+    await refreshAll();
+    tip('已改名：' + old + ' → ' + n, 'ok');
+    return;
+  }
   if (act === 'reg-approve') {
     await api('admin', { action: 'decideRegistration', nick: el.dataset.nick, approve: true });
     const t = el.closest('.toast'); if (t) t.remove();
