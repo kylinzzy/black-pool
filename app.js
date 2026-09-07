@@ -127,7 +127,7 @@ function postState(p) {
 
 const STATE_TEXT = { fresh: '最新', urgent: '倒计时', expired: '已过期', done: '已完成' };
 
-/** 张真源粉丝暗语：浑水摸鱼板块若命中则提示「疑似张真源相关」，可单条转入黑水塘（数字含5即算：57/15/5等都是粉丝说张真源；劳务/源也是黑话） */
+/** 张真源暗语：全站内容本就与张真源相关，命中即说明这条被放错了板块、该归入黑水塘（数字含5即算：57/15/5等都是粉丝说张真源；劳务/源也是黑话） */
 const ZZY_RE = /张真源|源源|小张张|张张|张哥|源哥|xzz|aqjj|劳务|源|5/i;
 
 /** 投诉类型配置：云端 config/tags.json（次管理员及以上可在管理后台增改），拿不到时用默认四类 */
@@ -484,11 +484,11 @@ function postCard(p) {
       // 🕵️ 链接级张真源暗语检测（仅浑水摸鱼板块）：命中标题暗语的链接单独标记，可单条转入黑水塘
       const lZzy = isFish && ZZY_RE.test(l.title || '');
       const zzyMove = (lZzy && staff && !l.deadReport)
-        ? ' <button class="btn sm" data-act="move-link" data-id="' + p.id + '" data-lid="' + l.id + '" title="这条疑似张真源相关，转入黑水塘（按投诉类型自动聚合）">→ 黑水塘</button>' : '';
+        ? ' <button class="btn sm" data-act="move-link" data-id="' + p.id + '" data-lid="' + l.id + '" title="这条疑似放置错误，转入黑水塘（按投诉类型自动聚合）">→ 黑水塘</button>' : '';
       return '<li class="' + (isDone(l) ? 'ok' : '') + '">' +
         '<input type="checkbox" ' + (isDone(l) ? 'checked' : '') + ' data-act="toggle" data-id="' + p.id + '" data-lid="' + l.id + '">' +
         '<span style="min-width:0;flex:1">' +
-          (l.title ? '<div class="ltitle">' + esc(l.title) + (lZzy ? ' <span class="fish-tag uf-tag" title="标题命中张真源粉丝暗语（xzz·aqjj·源源·小张张等）">⚠️ 疑似张真源</span>' : '') + salv + dead + '</div>' : salv + dead) +
+          (l.title ? '<div class="ltitle">' + esc(l.title) + (lZzy ? ' <span class="fish-tag uf-tag" title="标题命中张真源暗语（xzz·aqjj·源源·含5的数字·劳务·源等）——全站内容都与张真源相关，这条疑似放错了板块">⚠️ 疑似放置错误</span>' : '') + salv + dead + '</div>' : salv + dead) +
           (l.deadReport ? '<div class="dead-note">⚠️ 脚本运行显示此条已被删除，请捞黑员确认并删除失效内容（' + esc(l.deadReport.by) + ' 回报于 ' + fmtTime(l.deadReport.at) + '）</div>' : '') +
           '<span class="url" title="' + esc(l.url) + '">' + esc(l.url) + '</span>' +
           (metaLine ? '<div class="lmeta">' + esc(metaLine) + '</div>' : '') +
