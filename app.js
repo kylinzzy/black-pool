@@ -401,7 +401,7 @@ function statsCard() {
 
 /* 脚本安装引导：默认折叠，点开展开；提供直接安装/复制全文/下载三种方式 */
 function scriptHelp() {
-  const installUrl = API + '/script';
+  const installUrl = API + '/script.user.js';
   return '<details class="card script-help">' +
     '<summary>🛠 第一次使用？点此展开 · 安装投诉脚本（老成员可折叠）</summary>' +
     '<p class="hint">这个投诉脚本的链接一般人看不到，需先在浏览器装好「油猴 Tampermonkey」插件，再安装本站的专属脚本；之后点任意公告里的「🚨 一键投诉」才会自动批量投诉。</p>' +
