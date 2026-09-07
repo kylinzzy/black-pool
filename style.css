@@ -188,9 +188,13 @@ label { font-size: 12px; color: var(--ink-2); display: block; margin: 8px 0 4px;
 .modal label { display: block; font-size: 12px; color: var(--ink-2); margin: 10px 0 4px; }
 .modal input[type="password"], .modal input[type="text"] { width: 100%; box-sizing: border-box; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; }
 .modal h3 { margin: 0 0 4px; }
-.reason-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
+.modal .reason-item { display: flex; align-items: center; gap: 6px; margin: 0; padding: 3px 0; font-size: 13px; }
+#reason-box { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; margin: 4px 0 0; }
+@media (max-width: 420px) { #reason-box { grid-template-columns: 1fr; } }
 .reason-item input { width: 16px; height: 16px; accent-color: var(--brand); }
-.preset { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.preset { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.modal .hint { margin: 4px 0 8px; }
+.modal .row { margin-top: 10px; }
 
 .empty { text-align: center; color: var(--ink-2); padding: 26px 0; font-size: 13px; }
 
