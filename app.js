@@ -472,10 +472,12 @@ function postCard(p) {
     '<ul class="links">' + p.links.map((l) => {
       const metaLine = l.meta ? [l.meta.author, l.meta.ip, l.meta.postTime, l.meta.group].filter(Boolean).join(' · ') : '';
       const salv = l.salvagedBy ? ' <span class="fish-tag" title="由 ' + esc(l.salvagedBy) + ' 打捞进新批次">🎣 已打捞</span>' : '';
+      const dead = l.deadReport ? ' <span class="fish-tag dead-tag">⚠️ 已被删除</span>' : '';
       return '<li class="' + (isDone(l) ? 'ok' : '') + '">' +
         '<input type="checkbox" ' + (isDone(l) ? 'checked' : '') + ' data-act="toggle" data-id="' + p.id + '" data-lid="' + l.id + '">' +
         '<span style="min-width:0;flex:1">' +
-          (l.title ? '<div class="ltitle">' + esc(l.title) + salv + '</div>' : salv) +
+          (l.title ? '<div class="ltitle">' + esc(l.title) + salv + dead + '</div>' : salv + dead) +
+          (l.deadReport ? '<div class="dead-note">⚠️ 脚本运行显示此条已被删除，请捞黑员确认并删除失效内容（' + esc(l.deadReport.by) + ' 回报于 ' + fmtTime(l.deadReport.at) + '）</div>' : '') +
           '<span class="url" title="' + esc(l.url) + '">' + esc(l.url) + '</span>' +
           (metaLine ? '<div class="lmeta">' + esc(metaLine) + '</div>' : '') +
         '</span>' +
@@ -669,7 +671,7 @@ function scriptHelp() {
       '<li><b>③ 回黑水塘投诉</b> —— 到「黑水塘」点公告里的「🚨 一键投诉」→ 选理由 → 自动跳转豆瓣并批量投诉；投诉完回来在链接前打 ✓ 记战绩</li>' +
     '</ol>' +
     '<div class="row">' +
-      '<a class="btn big" href="' + installUrl + '" target="_blank" rel="noopener">⬇ 第②步：直接安装脚本 v2.6.2</a>' +
+      '<a class="btn big" href="' + installUrl + '" target="_blank" rel="noopener">⬇ 第②步：直接安装脚本 v2.6.3</a>' +
       '<button class="btn ghost" data-act="copy-script-full">复制脚本全文</button>' +
       '<button class="btn ghost" data-act="download-script">下载到本地</button>' +
       (firstTime ? '<button class="btn ghost" data-act="guide-done">✓ 我装好了，以后不再弹出</button>' : '') +
@@ -1117,7 +1119,11 @@ async function saveLogin(r) {
 /* ---------------- 一键投诉弹窗 ---------------- */
 function openReportModal(post) {
   const todo = post.links.filter((l) => !isDone(l));
-  state.pendingLinks = todo.length ? todo.map((l) => l.url) : post.links.map((l) => l.url);
+  const use = todo.length ? todo : post.links;
+  state.pendingLinks = use.map((l) => l.url);
+  // v2.6.3 脚本回报上下文：链接 id 与公告 id 随 kpbatch 带给脚本，发现已删除可回报
+  state.pendingLinkIds = use.map((l) => l.id);
+  state.pendingPostId = post.id;
   // 批次有主打类型 → 自动勾选对应理由（覆盖本地记忆）；混合批次沿用上次勾选
   const td = tagDef(post.tag);
   const tagIdx = td && td.reasons;
@@ -1150,7 +1156,13 @@ async function doReport() {
   const links = state.pendingLinks;
   if (!links.length) throw new Error('没有待投诉的链接');
 
-  const url = links[0] + '#kpbatch=' + b64url(JSON.stringify({ links, rounds, isInside: true }));
+  const url = links[0] + '#kpbatch=' + b64url(JSON.stringify({
+    links, rounds, isInside: true,
+    postId: state.pendingPostId || '',
+    linkIds: state.pendingLinkIds || [],
+    token: state.token || '',
+    api: API,
+  }));
   $('#mask').hidden = true;
   const win = window.open(url, '_blank');
   let copied = false;
