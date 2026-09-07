@@ -17,12 +17,14 @@ const state = {
   me: null,
   section: 'pool',
   filter: 'all',
+  poolTab: 'zzy',
   posts: [],
   findings: [],
   messages: [],
   users: [],
   apps: [],
   regs: [],
+  audit: [],
   initialized: false,
   seenFindings: new Set(JSON.parse(localStorage.getItem('bp_seen_f') || '[]')),
   seenRegs: new Set(JSON.parse(localStorage.getItem('bp_seen_r') || '[]')),
@@ -210,6 +212,8 @@ async function loadReport() {
     state.report.list = m.list || [];
     state.report.byDayMonth = m.byDay || [];
   }
+  // 操作审计（谁删了公告/链接）
+  api('admin', { action: 'audit' }).then((a) => { state.audit = a.items || []; safeRender(); }).catch(() => {});
 }
 
 /** 用户正在输入框打字时不重绘，避免内容被清掉；重绘后保持滚动位置 */
@@ -341,10 +345,14 @@ function highlightNav() {
 /* ---------------- 黑水塘 ---------------- */
 function viewPool() {
   const staff = state.me.role !== 'member';
+  // 板块：黑水塘（张真源相关）/ 浑水摸鱼（非张真源但恶劣影响）
+  const boardPosts = state.posts.filter((p) => (p.board || 'zzy') === state.poolTab);
+  const zzyCount = state.posts.filter((p) => (p.board || 'zzy') === 'zzy').length;
+  const fishCount = state.posts.length - zzyCount;
   const bucket = { all: [], fresh: [], urgent: [], expired: [], done: [] };
-  const counts = { all: state.posts.length, fresh: 0, urgent: 0, expired: 0, done: 0 };
-  state.posts.forEach((p) => { const s = postState(p); bucket[s].push(p); counts[s]++; });
-  bucket.all = state.posts.slice().sort((a, b) => {
+  const counts = { all: boardPosts.length, fresh: 0, urgent: 0, expired: 0, done: 0 };
+  boardPosts.forEach((p) => { const s = postState(p); bucket[s].push(p); counts[s]++; });
+  bucket.all = boardPosts.slice().sort((a, b) => {
     const sa = postState(a) === 'done' ? 1 : 0, sb = postState(b) === 'done' ? 1 : 0;
     return sa - sb || b.createdAt - a.createdAt;
   });
@@ -353,15 +361,24 @@ function viewPool() {
   let html = '<div class="sec-title"><span class="ic">🌊</span>黑水塘' +
     '<small>公告牌 · 点击左侧图标可快速跳转</small></div>';
 
+  html += '<div class="filters">' +
+    '<button class="chip' + (state.poolTab === 'zzy' ? ' active' : '') + '" data-act="pool-tab" data-b="zzy">🎣 黑水塘<span class="n">' + zzyCount + '</span></button>' +
+    '<button class="chip' + (state.poolTab === 'fish' ? ' active' : '') + '" data-act="pool-tab" data-b="fish">🐟 浑水摸鱼<span class="n">' + fishCount + '</span></button>' +
+    '</div>';
+
   html += statsCard();
   html += scriptHelp();
 
   if (staff) {
     html += '<div class="card">' +
       '<h3>📢 发布捕捞公告</h3>' +
+      '<label>发布板块</label><select id="p-board" style="width:100%">' +
+        '<option value="zzy">黑水塘（张真源相关黑帖）</option>' +
+        '<option value="fish">浑水摸鱼（非张真源相关 · 恶劣影响）</option>' +
+      '</select>' +
       '<label>公告标题</label><input type="text" id="p-title" placeholder="例如：9月第一波黑帖">' +
       '<label>链接（可一次粘贴多条，自动按 10 个一组拆分）</label>' +
-      '<textarea id="p-links" placeholder="每行一个链接，支持豆瓣短链 / topic id / 完整网址"></textarea>' +
+      '<textarea id="p-links" placeholder="每行一个链接，支持豆瓣完整网址 / 9位帖子ID / dispatch短链"></textarea>' +
       '<label>备注（可选）</label><input type="text" id="p-note" placeholder="例如：重点投诉挂人引战">' +
       '<div class="row" style="margin-top:10px"><button class="btn" id="b-pub">发布到公告牌</button></div>' +
     '</div>';
@@ -382,10 +399,11 @@ function postCard(p) {
   const done = p.links.filter(isDone).length;
   const pct = total ? Math.round((done / total) * 100) : 0;
   const staff = state.me.role !== 'member';
-  const canDel = state.me.role === 'admin' || p.by === state.me.nick;
+  const canDel = state.me.role === 'admin' || state.me.role === 'deputy'; // 整删仅最高/次级
+  const isFish = (p.board || 'zzy') === 'fish';
 
   return '<div class="card post ' + (st === 'done' ? 'done' : '') + '">' +
-    '<div class="head"><div class="title">' + esc(p.title) + '</div>' +
+    '<div class="head"><div class="title">' + (isFish ? '<span class="fish-tag">🐟 浑水摸鱼</span> ' : '') + esc(p.title) + '</div>' +
       '<span class="state ' + st + '">' + STATE_TEXT[st] + '</span></div>' +
     '<div class="meta">发布者 ' + esc(p.by) + ' · ' + fmtTime(p.createdAt) +
       ' · <b>' + fmtRemain(remainMs(p)) + '</b> · 我完成 ' + done + '/' + total + '</div>' +
@@ -400,6 +418,7 @@ function postCard(p) {
           '<span class="url" title="' + esc(l.url) + '">' + esc(l.url) + '</span>' +
           (metaLine ? '<div class="lmeta">' + esc(metaLine) + '</div>' : '') +
         '</span>' +
+        (staff ? '<button class="btn sm danger" data-act="del-link" data-id="' + p.id + '" data-lid="' + l.id + '" title="删除这条链接（进操作记录）">✕</button>' : '') +
         '<button class="btn sm ghost" data-act="copy-one" data-url="' + esc(l.url) + '">复制</button>' +
         '<button class="btn sm ghost" data-act="open-one" data-url="' + esc(l.url) + '">打开</button>' +
       '</li>';
@@ -602,9 +621,9 @@ function viewAdmin() {
       '</select>' +
       '<button class="btn" data-act="rep-load">查看</button>' +
       '<button class="btn ghost" data-act="rep-export">⬇ 下载 Excel（CSV）</button></div>' +
-      (mlist.length ? '<table class="rep-table" style="margin-top:10px"><tr><th>#</th><th>标题/链接</th><th>发帖人</th><th>IP</th><th>发帖时间</th><th>小组</th><th>上传人</th></tr>' +
+      (mlist.length ? '<table class="rep-table" style="margin-top:10px"><tr><th>#</th><th>板块</th><th>标题/链接</th><th>发帖人</th><th>IP</th><th>发帖时间</th><th>小组</th><th>上传人</th></tr>' +
         mlist.map((l) =>
-          '<tr><td>' + l.seq + '</td>' +
+          '<tr><td>' + l.seq + '</td><td>' + (l.board === 'fish' ? '🐟 浑水摸鱼' : '🎣 黑水塘') + '</td>' +
           '<td style="max-width:220px;word-break:break-all">' + (l.title ? esc(l.title) + '<br>' : '') +
             '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.url) + '</a></td>' +
           '<td>' + esc(l.author || '—') + '</td><td>' + esc(l.ip || '—') + '</td>' +
@@ -613,6 +632,18 @@ function viewAdmin() {
         : '<p class="hint">该月暂无上传记录。</p>') +
       '<p class="hint">CSV 用 Excel / WPS 直接打开，含：序列号、帖子链接、标题、发帖人、发帖IP、发帖时间、所属豆瓣小组、上传人、上传时间。黑帖的作者/IP/时间/小组来自豆瓣页面抓取，抓不到的显示 —，可点下方按钮补抓。</p>' +
       '<div class="row"><button class="btn ghost" data-act="rep-refresh-info">🔄 补抓缺失的黑帖信息</button></div>' +
+      '</div>';
+
+    // 🧾 操作记录（谁删了公告 / 链接）
+    const audit = state.audit || [];
+    html += '<div class="card"><h3>🧾 操作记录</h3>' +
+      (audit.length ? '<table class="rep-table"><tr><th>时间</th><th>操作人</th><th>操作</th><th>内容</th></tr>' +
+        audit.slice(0, 50).map((a) =>
+          '<tr><td style="white-space:nowrap">' + fmtTime(a.at) + '</td>' +
+          '<td>' + esc(a.by) + '<span class="muted">（' + esc(({ admin: '最高管理员', deputy: '次管理员', mod: '捞黑员', member: '执法者' })[a.role] || a.role) + '）</span></td>' +
+          '<td style="white-space:nowrap">' + esc(a.action) + '</td>' +
+          '<td style="word-break:break-all">' + esc(a.detail) + '</td></tr>').join('') + '</table>'
+        : '<div class="empty">暂无删除操作记录</div>') +
       '</div>';
   }
 
@@ -884,10 +915,18 @@ document.addEventListener('click', guard(async (e) => {
     return;
   }
   if (act === 'filter') { state.filter = el.dataset.f; render(); return; }
+  if (act === 'pool-tab') { state.poolTab = el.dataset.b; render(); return; }
 
   if (act === 'toggle') {
     await api('posts', { action: 'toggleLink', id: el.dataset.id, linkId: el.dataset.lid });
     await refreshAll();
+    return;
+  }
+  if (act === 'del-link') {
+    if (!confirm('确定删除这条链接？操作会记入管理后台的操作记录。')) return;
+    await api('posts', { action: 'removeLink', id: el.dataset.id, linkId: el.dataset.lid });
+    await refreshAll();
+    tip('已删除该链接', 'ok');
     return;
   }
   if (act === 'copy-one') { await copyText(el.dataset.url); tip('已复制', 'ok'); return; }
@@ -1136,6 +1175,7 @@ document.addEventListener('click', guard(async (e) => {
     const payload = {
       action: 'create', title: $('#p-title').value.trim(),
       links, note: $('#p-note').value.trim(),
+      board: ($('#p-board') || {}).value || 'zzy',
     };
     let r = await api('posts', payload);
     if (r.needConfirm) {
