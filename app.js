@@ -116,6 +116,11 @@ function postState(p) {
 
 const STATE_TEXT = { fresh: '最新', urgent: '倒计时', expired: '已过期', done: '已完成' };
 
+/** 批次主投诉类型徽章（mix 混合不显示） */
+const TAG_TXT = { porn: '🔞 色情批', yinzhan: '⚔️ 引战批', ai: '🤖 AI作假批' };
+/** 一键投诉时按批次类型自动勾选的理由（对应 CUSTOM_REASONS 下标） */
+const TAG_REASONS = { porn: [9], yinzhan: [10, 3, 0], ai: [7] };
+
 function fmtTime(ts) {
   const d = new Date(ts);
   const p = (n) => String(n).padStart(2, '0');
@@ -393,6 +398,13 @@ function viewPool(board) {
       '<label>公告标题</label><input type="text" id="p-title-' + board + '" placeholder="例如：9月第一波">' +
       '<label>链接（可一次粘贴多条，自动按 10 个一组拆分）</label>' +
       '<textarea id="p-links-' + board + '" placeholder="每行一个链接，支持豆瓣完整网址 / 9位帖子ID / dispatch短链"></textarea>' +
+      '<label>本批主打投诉类型（同类型聚进同一批，不混批；一键投诉会自动勾好对应理由）</label>' +
+      '<select id="p-tag-' + board + '">' +
+        '<option value="mix">🔀 混合（各种都有）</option>' +
+        '<option value="porn">🔞 色情低俗批</option>' +
+        '<option value="yinzhan">⚔️ 引战批</option>' +
+        '<option value="ai">🤖 AI作假批</option>' +
+      '</select>' +
       '<label>备注（可选）</label><input type="text" id="p-note-' + board + '" placeholder="例如：重点投诉挂人引战">' +
       '<div class="row" style="margin-top:10px"><button class="btn" data-act="b-pub" data-board="' + board + '">发布到' + (isFish ? '浑水摸鱼' : '黑水塘') + '</button></div>' +
     '</div>';
@@ -417,8 +429,12 @@ function postCard(p) {
   const isFish = (p.board || 'zzy') === 'fish';
 
   return '<div class="card post ' + (st === 'done' ? 'done' : '') + '">' +
-    '<div class="head"><div class="title">' + (isFish ? '<span class="fish-tag">🐟 浑水摸鱼</span> ' : '') + esc(p.title) + '</div>' +
-      '<span class="state ' + st + '">' + STATE_TEXT[st] + '</span></div>' +
+    '<div class="head"><div class="title">' + (isFish ? '<span class="fish-tag">🐟 浑水摸鱼</span> ' : '') + esc(p.title) +
+      (TAG_TXT[p.tag] ? ' <span class="fish-tag">' + TAG_TXT[p.tag] + '</span>' : '') + '</div>' +
+      '<span style="display:flex;gap:6px;align-items:center;white-space:nowrap">' +
+        (staff ? '<button class="btn sm ghost" data-act="rename-post" data-id="' + p.id + '" title="改标题，让大家知道这批投诉什么">✏️</button>' : '') +
+        '<span class="state ' + st + '">' + STATE_TEXT[st] + '</span>' +
+      '</span></div>' +
     '<div class="meta">发布者 ' + esc(p.by) + ' · ' + fmtTime(p.createdAt) +
       ' · <b>' + fmtRemain(remainMs(p)) + '</b> · 我完成 ' + done + '/' + total + '</div>' +
     (p.note ? '<div class="meta">📝 ' + esc(p.note) + '</div>' : '') +
@@ -910,11 +926,17 @@ async function saveLogin(r) {
 function openReportModal(post) {
   const todo = post.links.filter((l) => !isDone(l));
   state.pendingLinks = todo.length ? todo.map((l) => l.url) : post.links.map((l) => l.url);
-  const checked = new Set(JSON.parse(localStorage.getItem('bp_rounds') || 'null') || [0, 1, 2, 3]);
+  // 批次有主打类型 → 自动勾选对应理由（覆盖本地记忆）；混合批次沿用上次勾选
+  const tagIdx = TAG_REASONS[post.tag];
+  const checked = new Set(tagIdx || JSON.parse(localStorage.getItem('bp_rounds') || 'null') || [0, 1, 2, 3]);
+  const tagTip = (tagIdx && TAG_TXT[post.tag])
+    ? '<div class="ok-note" style="margin:0 0 8px">本批是' + TAG_TXT[post.tag] + '，已自动勾选对应投诉理由，可直接开始</div>'
+    : '';
   $('#modal').innerHTML =
     '<div class="modal">' +
       '<h3>🚨 一键投诉</h3>' +
       '<p class="hint">共 ' + state.pendingLinks.length + ' 个待投诉链接。选好理由后跳转第一条链接，脚本自动接管批量投诉；链接同时复制到剪贴板。</p>' +
+      tagTip +
       '<div class="preset">' + PRESETS.map((p, i) =>
         '<button class="chip" data-act="preset" data-i="' + i + '">' + esc(p.name) + '</button>').join('') + '</div>' +
       '<div id="reason-box">' + CUSTOM_REASONS.map((r, i) =>
@@ -1052,6 +1074,20 @@ document.addEventListener('click', guard(async (e) => {
     return;
   }
   if (act === 'report') { openReportModal(state.posts.find((x) => x.id === el.dataset.id)); return; }
+  if (act === 'rename-post') {
+    const id = el.dataset.id;
+    const post = (state.posts || []).find((x) => x.id === id);
+    const cur = post ? post.title : '';
+    const t = prompt('修改公告标题（让大家一眼知道这批投诉什么）：', cur);
+    if (!t) return;
+    const n = t.trim();
+    if (!n || n === cur) return;
+    if (n.length < 2) throw new Error('标题至少 2 个字符');
+    await api('posts', { action: 'renamePost', id, title: n });
+    await refreshAll();
+    tip('标题已更新：' + n, 'ok');
+    return;
+  }
   if (act === 'del-post') {
     if (!confirm('确定删除这条公告？')) return;
     await api('posts', { action: 'delete', id: el.dataset.id });
@@ -1088,6 +1124,7 @@ document.addEventListener('click', guard(async (e) => {
       action: 'create', title: $('#p-title-' + board).value.trim(),
       links, note: $('#p-note-' + board).value.trim(),
       board,
+      tag: ($('#p-tag-' + board) || {}).value || 'mix',
     };
     let r = await api('posts', payload);
     if (r.needConfirm) {
