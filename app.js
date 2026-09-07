@@ -578,8 +578,9 @@ function viewAdmin() {
       '<div class="finding pending"><div class="u"><b>' + esc(r.nick) + '</b>' +
       '<div class="muted">' + fmtTime(r.createdAt) + '</div>' +
       '<div class="pending-pics">' +
-        GROUPS.map((g) => '<img data-img="' + esc((r.images || {})[g.key] || '') + '" alt="' + g.name + '" title="' + g.name + '在组截图">').join('') +
+        GROUPS.map((g) => '<img data-act="zoom-img" data-img="' + esc((r.images || {})[g.key] || '') + '" alt="' + g.name + '" title="' + g.name + '在组截图（点击放大）">').join('') +
       '</div></div>' +
+      '<p class="hint" style="margin:4px 0 0">截图为缩略图（可能裁掉边缘），点击可放大查看原图，核对【组名 + 豆瓣用户名】。</p>' +
       '<div class="row" style="flex-direction:column;gap:6px">' +
       (approver
         ? '<button class="btn sm" data-act="reg-approve" data-nick="' + esc(r.nick) + '">通过</button>' +
@@ -725,6 +726,21 @@ async function loadPendingImages() {
   }));
 }
 
+/** 截图放大灯箱：点击任意处关闭 */
+function openLightbox(cap, src) {
+  closeLightbox();
+  const box = document.createElement('div');
+  box.className = 'img-lightbox';
+  box.innerHTML = '<img src="' + src + '" alt="">' +
+    '<div class="cap">' + esc(cap || '截图') + ' · 点击任意处关闭</div>';
+  box.onclick = () => box.remove();
+  document.body.appendChild(box);
+}
+function closeLightbox() {
+  const old = document.querySelector('.img-lightbox');
+  if (old) old.remove();
+}
+
 /* ---------------- 登录 / 注册 ---------------- */
 let authMode = 'login';
 const regForm = { groups: { yuanqi: '', pisa: '' }, imgs: { yuanqi: '', pisa: '' } };
@@ -782,7 +798,9 @@ function paintAuth(msgHtml) {
 
   html += '<div class="row" style="margin-top:14px">' +
     '<button class="btn" id="b-main">' + (isInit ? '创建并进入' : (isReg ? '提交入队申请' : '登录')) + '</button>' +
+    (!isInit && !isReg ? '<button class="btn ghost" data-act="reg-status">查询审核进度</button>' : '') +
     '</div>' +
+    (!isInit && !isReg ? '<p class="hint">申请过入队？填好昵称后点「查询审核进度」即可看到是否通过。</p>' : '') +
     (msgHtml || '');
   card.innerHTML = html;
 
@@ -926,6 +944,27 @@ document.addEventListener('click', guard(async (e) => {
   const act = el.dataset.act;
 
   if (act === 'mode') { authMode = el.dataset.m; paintAuth(); return; }
+  if (act === 'reg-status') {
+    const nick = ($('#i-nick') ? $('#i-nick').value : '').trim();
+    if (nick.length < 2) throw new Error('请先在上方填写你的豆瓣昵称');
+    const r = await api('auth', { action: 'registerStatus', nick });
+    const msg = r.status === 'pending'
+      ? '<div class="ok-note">⏳ <b>' + esc(nick) + '</b> 的入队申请还在审核中，请耐心等待管理员通过；通过后用这个昵称和密码直接登录即可。</div>'
+      : r.status === 'active'
+        ? '<div class="ok-note">✅ <b>' + esc(nick) + '</b> 的申请已通过！直接在上方输入昵称和密码登录即可。</div>'
+        : '<div class="reject">未找到昵称为 <b>' + esc(nick) + '</b> 的申请记录。请核对昵称（需与豆瓣一致），或到「申请入队」重新提交。</div>';
+    const nickKeep = nick;
+    paintAuth(msg);
+    const inp = $('#i-nick');
+    if (inp) inp.value = nickKeep;
+    return;
+  }
+  if (act === 'zoom-img') {
+    const src = el.getAttribute('src') || '';
+    if (!src) { tip('截图还在加载中，请稍候再点', 'err'); return; }
+    openLightbox(el.getAttribute('title') || '', src);
+    return;
+  }
   if (act === 'pick') {
     regForm.groups[el.dataset.g] = el.dataset.v;
     paintAuth();
