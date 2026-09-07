@@ -310,6 +310,7 @@ function render() {
       '<aside class="sidebar">' +
         '<div class="brand">净化阿北<span>反黑协作站</span></div>' +
         navBtn('pool', '🌊', '黑水塘') +
+        navBtn('fish', '🐟', '浑水摸鱼') +
         navBtn('find', '🔍', '发现黑水') +
         navBtn('msg', '💬', '留言板') +
         (staff ? navBtn('admin', '⚙️', '管理后台') : '') +
@@ -321,7 +322,8 @@ function render() {
         '</div>' +
       '</aside>' +
       '<div class="content"><div class="inner">' +
-        '<section id="sec-pool">' + viewPool() + '</section>' +
+        '<section id="sec-pool">' + viewPool('zzy') + '</section>' +
+        '<section id="sec-fish">' + viewPool('fish') + '</section>' +
         '<section id="sec-find">' + viewFind() + '</section>' +
         '<section id="sec-msg">' + viewMsg() + '</section>' +
         (staff ? '<section id="sec-admin">' + viewAdmin() + '</section>' : '') +
@@ -338,7 +340,7 @@ function navBtn(id, icon, label) {
 
 let navObserver = null;
 function highlightNav() {
-  const secs = ['pool', 'find', 'msg', 'admin'];
+  const secs = ['pool', 'fish', 'find', 'msg', 'admin'];
   if (navObserver) navObserver.disconnect();
   const obs = new IntersectionObserver((entries) => {
     entries.forEach((en) => {
@@ -357,13 +359,11 @@ function highlightNav() {
   navObserver = obs;
 }
 
-/* ---------------- 黑水塘 ---------------- */
-function viewPool() {
+/* ---------------- 黑水塘 / 浑水摸鱼（同一渲染器，按板块区分） ---------------- */
+function viewPool(board) {
   const staff = state.me.role !== 'member';
-  // 板块：黑水塘（张真源相关）/ 浑水摸鱼（非张真源但恶劣影响）
-  const boardPosts = state.posts.filter((p) => (p.board || 'zzy') === state.poolTab);
-  const zzyCount = state.posts.filter((p) => (p.board || 'zzy') === 'zzy').length;
-  const fishCount = state.posts.length - zzyCount;
+  const isFish = board === 'fish';
+  const boardPosts = state.posts.filter((p) => (p.board || 'zzy') === board);
   const bucket = { all: [], fresh: [], urgent: [], expired: [], done: [] };
   const counts = { all: boardPosts.length, fresh: 0, urgent: 0, expired: 0, done: 0 };
   boardPosts.forEach((p) => { const s = postState(p); bucket[s].push(p); counts[s]++; });
@@ -373,29 +373,22 @@ function viewPool() {
   });
   const list = bucket[state.filter] || [];
 
-  let html = '<div class="sec-title"><span class="ic">🌊</span>黑水塘' +
-    '<small>公告牌 · 点击左侧图标可快速跳转</small></div>';
+  let html = '<div class="sec-title"><span class="ic">' + (isFish ? '🐟' : '🌊') + '</span>' + (isFish ? '浑水摸鱼' : '黑水塘') +
+    '<small>' + (isFish ? '非张真源相关 · 但有恶劣影响的帖子' : '公告牌 · 点击左侧图标可快速跳转') + '</small></div>';
 
-  html += '<div class="filters">' +
-    '<button class="chip' + (state.poolTab === 'zzy' ? ' active' : '') + '" data-act="pool-tab" data-b="zzy">🎣 黑水塘<span class="n">' + zzyCount + '</span></button>' +
-    '<button class="chip' + (state.poolTab === 'fish' ? ' active' : '') + '" data-act="pool-tab" data-b="fish">🐟 浑水摸鱼<span class="n">' + fishCount + '</span></button>' +
-    '</div>';
-
-  html += statsCard();
-  html += scriptHelp();
+  if (!isFish) {
+    html += statsCard();
+    html += scriptHelp();
+  }
 
   if (staff) {
     html += '<div class="card">' +
-      '<h3>📢 发布捕捞公告</h3>' +
-      '<label>发布板块</label><select id="p-board" style="width:100%">' +
-        '<option value="zzy">黑水塘（张真源相关黑帖）</option>' +
-        '<option value="fish">浑水摸鱼（非张真源相关 · 恶劣影响）</option>' +
-      '</select>' +
-      '<label>公告标题</label><input type="text" id="p-title" placeholder="例如：9月第一波黑帖">' +
+      '<h3>📢 发布到' + (isFish ? '浑水摸鱼' : '黑水塘') + '</h3>' +
+      '<label>公告标题</label><input type="text" id="p-title-' + board + '" placeholder="例如：9月第一波">' +
       '<label>链接（可一次粘贴多条，自动按 10 个一组拆分）</label>' +
-      '<textarea id="p-links" placeholder="每行一个链接，支持豆瓣完整网址 / 9位帖子ID / dispatch短链"></textarea>' +
-      '<label>备注（可选）</label><input type="text" id="p-note" placeholder="例如：重点投诉挂人引战">' +
-      '<div class="row" style="margin-top:10px"><button class="btn" id="b-pub">发布到公告牌</button></div>' +
+      '<textarea id="p-links-' + board + '" placeholder="每行一个链接，支持豆瓣完整网址 / 9位帖子ID / dispatch短链"></textarea>' +
+      '<label>备注（可选）</label><input type="text" id="p-note-' + board + '" placeholder="例如：重点投诉挂人引战">' +
+      '<div class="row" style="margin-top:10px"><button class="btn" data-act="b-pub" data-board="' + board + '">发布到' + (isFish ? '浑水摸鱼' : '黑水塘') + '</button></div>' +
     '</div>';
   }
 
@@ -404,7 +397,7 @@ function viewPool() {
     '<button class="chip' + (state.filter === k ? ' active' : '') + '" data-act="filter" data-f="' + k + '">' +
     names[k] + '<span class="n">' + counts[k] + '</span></button>').join('') + '</div>';
 
-  html += list.length ? list.map(postCard).join('') : '<div class="card empty">这里还很干净 🐟</div>';
+  html += list.length ? list.map(postCard).join('') : '<div class="card empty">' + (isFish ? '这里还很干净 🐟' : '这里还很干净 🌊') + '</div>';
   return html;
 }
 
@@ -1027,6 +1020,35 @@ document.addEventListener('click', guard(async (e) => {
     safeRender(); tip('已加载 ' + state.report.selMonth + ' 月报', 'ok');
     return;
   }
+  if (act === 'b-pub') {
+    const board = el.dataset.board === 'fish' ? 'fish' : 'zzy';
+    const links = $('#p-links-' + board).value.trim();
+    if (!links) throw new Error('请粘贴至少一个链接');
+    const payload = {
+      action: 'create', title: $('#p-title-' + board).value.trim(),
+      links, note: $('#p-note-' + board).value.trim(),
+      board,
+    };
+    let r = await api('posts', payload);
+    if (r.needConfirm) {
+      const choice = await dupesModal(r.dupes || [], r.fresh);
+      if (!choice) return;
+      payload.force = true;
+      payload.skipDupes = choice === 'skip';
+      r = await api('posts', payload);
+    }
+    await refreshAll();
+    const created = (r.created && r.created.length) || 0;
+    const filled = (r.filled && r.filled.length) || 0;
+    const skipList = r.skippedList || [];
+    let msg = '已聚合发布：新建 ' + created + ' 批、补入 ' + filled + ' 批';
+    if (skipList.length) {
+      msg += '，剔除 ' + skipList.length + ' 条重复';
+      showSkippedModal(skipList);
+    }
+    tip(msg, 'ok');
+    return;
+  }
   if (act === 'audit-toggle') { state.auditOpen = !state.auditOpen; render(); return; }
   if (act === 'ops-load') {
     state.report = state.report || {};
@@ -1253,33 +1275,6 @@ function openPassModal() {  $('#modal').innerHTML =
 /* 页面内直接绑定的按钮 */
 document.addEventListener('click', guard(async (e) => {
   const id = e.target.id;
-  if (id === 'b-pub') {
-    const links = $('#p-links').value.trim();
-    if (!links) throw new Error('请粘贴至少一个链接');
-    const payload = {
-      action: 'create', title: $('#p-title').value.trim(),
-      links, note: $('#p-note').value.trim(),
-      board: ($('#p-board') || {}).value || 'zzy',
-    };
-    let r = await api('posts', payload);
-    if (r.needConfirm) {
-      const choice = await dupesModal(r.dupes || [], r.fresh);
-      if (!choice) return;
-      payload.force = true;
-      payload.skipDupes = choice === 'skip';
-      r = await api('posts', payload);
-    }
-    await refreshAll();
-    const created = (r.created && r.created.length) || 0;
-    const filled = (r.filled && r.filled.length) || 0;
-    const skipList = r.skippedList || [];
-    let msg = '已聚合发布：新建 ' + created + ' 批、补入 ' + filled + ' 批';
-    if (skipList.length) {
-      msg += '，剔除 ' + skipList.length + ' 条重复';
-      showSkippedModal(skipList);
-    }
-    tip(msg, 'ok');
-  }
   if (id === 'b-find') {
     const url = $('#f-url').value.trim();
     if (!url) throw new Error('请填写链接');
