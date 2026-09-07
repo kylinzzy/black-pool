@@ -582,30 +582,26 @@ function viewAdmin() {
         '</div></div>').join('') : '<div class="empty">暂无待审批申请</div>') + '</div>';
   }
 
-  // 📊 日汇总 + 月汇报（最高管理员 / 次管理员 / 捞黑员）
+  // 📊 日汇总（仅今日速览）+ 月汇报（最高管理员 / 次管理员 / 捞黑员）
   if (staff) {
     const rep = state.report || {};
-    const byDay = rep.byDay || [];
     const mlist = rep.list || [];
-    html += '<div class="card"><h3>📊 日汇总（近 30 天）</h3>' +
-      (byDay.length ? '<table class="rep-table"><tr><th>日期</th><th>上传黑帖</th><th>参与人数</th></tr>' +
-        byDay.slice().reverse().map((d) =>
-          '<tr><td>' + d.date + '</td><td>' + d.uploads + '</td><td>' + d.people + '</td></tr>').join('') +
-        '</table>' : '<div class="empty">暂无数据</div>') +
-      '</div>';
-
-    const months = rep.months || [new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 7)];
+    const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+    const td = (rep.byDay || []).find((d) => d.date === today) || { uploads: 0, people: 0 };
+    const months = rep.months || [today.slice(0, 7)];
     const cur = rep.selMonth || months[0];
     html += '<div class="card"><h3>🗓 月汇报</h3>' +
+      '<div class="stats" style="margin-bottom:10px">' +
+        '<div class="stat"><b>今日上传</b><span>' + td.uploads + '</span></div>' +
+        '<div class="stat"><b>今日参与</b><span>' + td.people + '</span></div>' +
+        '<div class="stat"><b>本月上传黑帖</b><span>' + (rep.uploads != null ? rep.uploads : '—') + '</span></div>' +
+        '<div class="stat"><b>本月参与人数</b><span>' + (rep.participants != null ? rep.participants : '—') + '</span></div>' +
+      '</div>' +
       '<div class="row"><select id="rep-month" style="flex:1">' +
         months.map((m) => '<option value="' + m + '"' + (m === cur ? ' selected' : '') + '>' + m + '</option>').join('') +
       '</select>' +
       '<button class="btn" data-act="rep-load">查看</button>' +
       '<button class="btn ghost" data-act="rep-export">⬇ 下载 Excel（CSV）</button></div>' +
-      '<div class="stats" style="margin-top:10px">' +
-        '<div class="stat"><b>本月上传黑帖</b><span>' + (rep.uploads != null ? rep.uploads : '—') + '</span></div>' +
-        '<div class="stat"><b>本月参与人数</b><span>' + (rep.participants != null ? rep.participants : '—') + '</span></div>' +
-      '</div>' +
       (mlist.length ? '<table class="rep-table" style="margin-top:10px"><tr><th>#</th><th>标题/链接</th><th>发帖人</th><th>IP</th><th>发帖时间</th><th>小组</th><th>上传人</th></tr>' +
         mlist.map((l) =>
           '<tr><td>' + l.seq + '</td>' +
