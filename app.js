@@ -689,7 +689,7 @@ function scriptHelp() {
       '<li><b>③ 回黑水塘投诉</b> —— 到「黑水塘」点公告里的「🚨 一键投诉」→ 选理由 → 自动跳转豆瓣并批量投诉；投诉完回来在链接前打 ✓ 记战绩</li>' +
     '</ol>' +
     '<div class="row">' +
-      '<a class="btn big" href="' + installUrl + '" target="_blank" rel="noopener">⬇ 第②步：直接安装脚本 v2.6.4</a>' +
+      '<a class="btn big" href="' + installUrl + '" target="_blank" rel="noopener">⬇ 第②步：直接安装脚本 v2.6.5</a>' +
       '<button class="btn ghost" data-act="copy-script-full">复制脚本全文</button>' +
       '<button class="btn ghost" data-act="download-script">下载到本地</button>' +
       (firstTime ? '<button class="btn ghost" data-act="guide-done">✓ 我装好了，以后不再弹出</button>' : '') +
