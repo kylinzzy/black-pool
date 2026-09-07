@@ -124,10 +124,20 @@ function postState(p) {
 
 const STATE_TEXT = { fresh: '最新', urgent: '倒计时', expired: '已过期', done: '已完成' };
 
-/** 批次主投诉类型徽章（mix 混合不显示） */
-const TAG_TXT = { porn: '🔞 色情批', yinzhan: '⚔️ 引战批', ai: '🤖 AI作假批' };
-/** 一键投诉时按批次类型自动勾选的理由（对应 CUSTOM_REASONS 下标） */
-const TAG_REASONS = { porn: [9], yinzhan: [10, 3, 0], ai: [7] };
+/** 投诉类型配置：云端 config/tags.json（次管理员及以上可在管理后台增改），拿不到时用默认四类 */
+const DEFAULT_TAGS = [
+  { key: 'mix', name: '混合（各种都有）', emoji: '🔀', reasons: null },
+  { key: 'porn', name: '色情低俗批', emoji: '🔞', reasons: [9] },
+  { key: 'yinzhan', name: '引战批', emoji: '⚔️', reasons: [10, 3, 0] },
+  { key: 'ai', name: 'AI作假批', emoji: '🤖', reasons: [7] },
+];
+function tagList() { return (state.tags && state.tags.length) ? state.tags : DEFAULT_TAGS; }
+function tagDef(key) { return tagList().find((t) => t.key === key) || null; }
+/** 批次类型徽章文案（mix 混合不显示） */
+function tagBadge(key) {
+  const t = tagDef(key);
+  return (t && t.key !== 'mix') ? (t.emoji ? t.emoji + ' ' : '') + t.name : '';
+}
 
 function fmtTime(ts) {
   const d = new Date(ts);
@@ -197,6 +207,7 @@ async function refreshAll() {
 
   const res = await Promise.all(jobs);
   state.posts = res[0].posts || [];
+  state.tags = res[0].tags || [];
   state.stats = res[0].stats || { total: 0, undone: 0, done: 0, mineTotal: 0, mineToday: 0 };
   checkNewFindings(res[1].findings || []);
   state.findings = res[1].findings || [];
@@ -387,8 +398,9 @@ function viewPool(board) {
     counts[s]++;
     if (s !== 'done') { bucket.all.push(p); counts.all++; }
   });
-  // 各分类内部都按发布时间倒序：最新的永远排第一
-  const byNew = (a, b) => b.createdAt - a.createdAt;
+  // 各分类内部按「最近活动时间」倒序：新发布公告、往老批次补链都会把批次顶到最前
+  const lastTouch = (p) => Math.max(p.createdAt || 0, ...(p.links || []).map((l) => l.addedAt || 0));
+  const byNew = (a, b) => lastTouch(b) - lastTouch(a);
   Object.keys(bucket).forEach((k) => bucket[k].sort(byNew));
   const list = bucket[state.filter] || [];
 
@@ -408,10 +420,7 @@ function viewPool(board) {
       '<textarea id="p-links-' + board + '" placeholder="每行一个链接，支持豆瓣完整网址 / 9位帖子ID / dispatch短链"></textarea>' +
       '<label>本批主打投诉类型（同类型聚进同一批，不混批；一键投诉会自动勾好对应理由）</label>' +
       '<select id="p-tag-' + board + '">' +
-        '<option value="mix">🔀 混合（各种都有）</option>' +
-        '<option value="porn">🔞 色情低俗批</option>' +
-        '<option value="yinzhan">⚔️ 引战批</option>' +
-        '<option value="ai">🤖 AI作假批</option>' +
+        tagList().map((t) => '<option value="' + esc(t.key) + '">' + esc((t.emoji ? t.emoji + ' ' : '') + t.name) + '</option>').join('') +
       '</select>' +
       '<label>备注（可选）</label><input type="text" id="p-note-' + board + '" placeholder="例如：重点投诉挂人引战">' +
       '<div class="row" style="margin-top:10px"><button class="btn" data-act="b-pub" data-board="' + board + '">发布到' + (isFish ? '浑水摸鱼' : '黑水塘') + '</button></div>' +
@@ -438,7 +447,7 @@ function postCard(p) {
 
   return '<div class="card post ' + (st === 'done' ? 'done' : '') + '">' +
     '<div class="head"><div class="title">' + (isFish ? '<span class="fish-tag">🐟 浑水摸鱼</span> ' : '') + esc(p.title) +
-      (TAG_TXT[p.tag] ? ' <span class="fish-tag">' + TAG_TXT[p.tag] + '</span>' : '') + '</div>' +
+      (tagBadge(p.tag) ? ' <span class="fish-tag">' + esc(tagBadge(p.tag)) + '</span>' : '') + '</div>' +
       '<span style="display:flex;gap:6px;align-items:center;white-space:nowrap">' +
         (staff ? '<button class="btn sm ghost" data-act="rename-post" data-id="' + p.id + '" title="改标题，让大家知道这批投诉什么">✏️</button>' : '') +
         '<span class="state ' + st + '">' + STATE_TEXT[st] + '</span>' +
@@ -469,6 +478,22 @@ function postCard(p) {
       (staff && st === 'expired' && p.links.some(isAlive) ? '<button class="btn sm" data-act="salvage-modal" data-id="' + p.id + '" title="把还没人处理的链接重新聚合成新批次">🎣 打捞未处理</button>' : '') +
       (canDel ? '<button class="btn sm danger" data-act="del-post" data-id="' + p.id + '">删除公告</button>' : '') +
     '</div></div>';
+}
+
+/** 投诉类型管理：单行编辑（emoji + 名称 + 自动勾选的理由复选框 + 删除） */
+function tagRow(t) {
+  const reasons = t.reasons || [];
+  return '<div class="tag-row" data-key="' + esc(t.key || '') + '">' +
+    '<input class="t-emoji" value="' + esc(t.emoji || '') + '" maxlength="4" placeholder="🔖" title="徽章图标">' +
+    '<input class="t-name" value="' + esc(t.name || '') + '" maxlength="20" placeholder="类型名称" style="flex:1;min-width:120px">' +
+    '<div class="t-reasons">' + CUSTOM_REASONS.map((r, i) =>
+      '<label class="reason-item" title="' + esc(r.r + (r.s ? ' / ' + r.s : '')) + '">' +
+      '<input type="checkbox" value="' + i + '"' + (reasons.indexOf(i) > -1 ? ' checked' : '') + '>' +
+      esc(r.s || r.r) + '</label>').join('') + '</div>' +
+    (t.key === 'mix'
+      ? '<span class="muted" style="white-space:nowrap;font-size:12px">默认类型</span>'
+      : '<button class="btn sm danger" data-act="tag-del">删除</button>') +
+  '</div>';
 }
 
 /* 数字模块：全局战绩，点击跳到黑水塘 */
@@ -652,6 +677,18 @@ function viewAdmin() {
         '</div></div>').join('') : '<div class="empty">暂无待审批申请</div>') + '</div>';
   }
 
+  // 🗂 投诉类型管理（次管理员及以上）：发布下拉、批次徽章、自动勾选理由都来自这里
+  if (state.me.role === 'admin' || state.me.role === 'deputy') {
+    const tags = tagList();
+    html += '<div class="card"><h3>🗂 投诉类型管理</h3>' +
+      '<p class="hint">发布批次时的「主打投诉类型」、公告上的类型徽章、一键投诉自动勾选的理由都来自这里。同类型批次才会互相聚合，不混批。改完记得点「保存」。</p>' +
+      '<div id="tag-rows">' + tags.map((t) => tagRow(t)).join('') + '</div>' +
+      '<div class="row" style="margin-top:10px">' +
+        '<button class="btn ghost sm" data-act="tag-add">＋ 新增类型</button>' +
+        '<button class="btn sm" data-act="tag-save">💾 保存类型配置</button>' +
+      '</div></div>';
+  }
+
   // 📊 日汇总（仅今日速览）+ 月汇报（最高管理员 / 次管理员 / 捞黑员）
   if (staff) {
     const rep = state.report || {};
@@ -672,14 +709,14 @@ function viewAdmin() {
       '</select>' +
       '<button class="btn" data-act="rep-load">查看</button>' +
       '<button class="btn ghost" data-act="rep-export">⬇ 下载 Excel（CSV）</button></div>' +
-      (mlist.length ? '<table class="rep-table" style="margin-top:10px"><tr><th>#</th><th>板块</th><th>标题/链接</th><th>发帖人</th><th>IP</th><th>发帖时间</th><th>小组</th><th>上传人</th></tr>' +
+      (mlist.length ? '<div class="scroll-box"><table class="rep-table"><tr><th>#</th><th>板块</th><th>标题/链接</th><th>发帖人</th><th>IP</th><th>发帖时间</th><th>小组</th><th>上传人</th></tr>' +
         mlist.map((l) =>
           '<tr><td>' + l.seq + '</td><td>' + (l.board === 'fish' ? '🐟 浑水摸鱼' : '🎣 黑水塘') + '</td>' +
           '<td style="max-width:220px;word-break:break-all">' + (l.title ? esc(l.title) + '<br>' : '') +
             '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.url) + '</a></td>' +
           '<td>' + esc(l.author || '—') + '</td><td>' + esc(l.ip || '—') + '</td>' +
           '<td>' + esc(l.postTime || '—') + '</td><td>' + esc(l.group || '—') + '</td>' +
-          '<td>' + esc(l.by || '—') + '</td></tr>').join('') + '</table>'
+          '<td>' + esc(l.by || '—') + '</td></tr>').join('') + '</table></div>'
         : '<p class="hint">该月暂无上传记录。</p>') +
       '<p class="hint">CSV 用 Excel / WPS 直接打开，含：序列号、帖子链接、标题、发帖人、发帖IP、发帖时间、所属豆瓣小组、上传人、上传时间。黑帖的作者/IP/时间/小组来自豆瓣页面抓取，抓不到的显示 —，可点下方按钮补抓。</p>' +
       '<div class="row"><button class="btn ghost" data-act="rep-refresh-info">🔄 补抓缺失的黑帖信息</button></div>' +
@@ -937,10 +974,11 @@ function openReportModal(post) {
   const todo = post.links.filter((l) => !isDone(l));
   state.pendingLinks = todo.length ? todo.map((l) => l.url) : post.links.map((l) => l.url);
   // 批次有主打类型 → 自动勾选对应理由（覆盖本地记忆）；混合批次沿用上次勾选
-  const tagIdx = TAG_REASONS[post.tag];
+  const td = tagDef(post.tag);
+  const tagIdx = td && td.reasons;
   const checked = new Set(tagIdx || JSON.parse(localStorage.getItem('bp_rounds') || 'null') || [0, 1, 2, 3]);
-  const tagTip = (tagIdx && TAG_TXT[post.tag])
-    ? '<div class="ok-note" style="margin:0 0 8px">本批是' + TAG_TXT[post.tag] + '，已自动勾选对应投诉理由，可直接开始</div>'
+  const tagTip = (tagIdx && td)
+    ? '<div class="ok-note" style="margin:0 0 8px">本批是' + esc((td.emoji ? td.emoji + ' ' : '') + td.name) + '，已自动勾选对应投诉理由，可直接开始</div>'
     : '';
   $('#modal').innerHTML =
     '<div class="modal">' +
@@ -1114,6 +1152,31 @@ document.addEventListener('click', guard(async (e) => {
   if (act === 'report') { openReportModal(state.posts.find((x) => x.id === el.dataset.id)); return; }
   if (act === 'salvage-modal') { openSalvageModal(state.posts.find((x) => x.id === el.dataset.id)); return; }
   if (act === 'do-salvage') { await doSalvage(); return; }
+  if (act === 'tag-add') {
+    const box = document.getElementById('tag-rows');
+    if (!box) return;
+    box.insertAdjacentHTML('beforeend', tagRow({ key: '', name: '', emoji: '', reasons: [] }));
+    return;
+  }
+  if (act === 'tag-del') {
+    const row = el.closest('.tag-row');
+    if (row) row.remove();
+    return;
+  }
+  if (act === 'tag-save') {
+    const rows = [...document.querySelectorAll('#tag-rows .tag-row')];
+    const tags = rows.map((row) => ({
+      key: row.dataset.key || '',
+      emoji: (row.querySelector('.t-emoji') || {}).value || '',
+      name: (row.querySelector('.t-name') || {}).value || '',
+      reasons: [...row.querySelectorAll('.t-reasons input:checked')].map((b) => Number(b.value)),
+    }));
+    const r = await api('posts', { action: 'saveTags', tags });
+    state.tags = r.tags || tags;
+    await refreshAll();
+    tip('投诉类型已保存，全员生效', 'ok');
+    return;
+  }
   if (act === 'rename-post') {
     const id = el.dataset.id;
     const post = (state.posts || []).find((x) => x.id === id);
