@@ -479,8 +479,8 @@ function viewFind() {
     '<small>公告牌上没有的黑帖，贴到这里</small></div>' +
     '<div class="card">' +
       '<h3>提交尚未捕捞的黑水</h3>' +
-      '<p class="hint">提交后所有管理员右下角会立刻收到提醒。</p>' +
-      '<label>黑帖链接</label><input type="text" id="f-url" placeholder="https://www.douban.com/group/topic/xxxxx/">' +
+      '<p class="hint">提交后所有管理员右下角会立刻收到提醒。可一次粘贴多条，每行一个。</p>' +
+      '<label>黑帖链接（每行一个，可多条）</label><textarea id="f-links" rows="4" placeholder="https://www.douban.com/group/topic/xxxxx/&#10;https://www.douban.com/group/topic/xxxxx/"></textarea>' +
       '<label>说明（可选）</label><input type="text" id="f-note" placeholder="例如：造谣爆料，已在传播">' +
       '<div class="row" style="margin-top:10px"><button class="btn" id="b-find">提交发现</button></div>' +
     '</div>';
@@ -499,8 +499,12 @@ function viewFind() {
 function findingRow(f) {
   const staff = state.me.role !== 'member';
   const tag = { pending: '待处理', accepted: '已发布', ignored: '已忽略' }[f.status] || f.status;
+  const metaLine = f.meta ? [f.meta.author, f.meta.ip, f.meta.postTime, f.meta.group].filter(Boolean).join(' · ') : '';
   return '<div class="finding ' + f.status + '">' +
-    '<div class="u"><a href="' + esc(f.url) + '" target="_blank" rel="noopener">' + esc(f.url) + '</a>' +
+    '<div class="u">' +
+      (f.title ? '<div class="ltitle">' + esc(f.title) + '</div>' : '') +
+      '<a href="' + esc(f.url) + '" target="_blank" rel="noopener">' + esc(f.url) + '</a>' +
+      (metaLine ? '<div class="muted">' + esc(metaLine) + '</div>' : '') +
       (f.note ? '<div class="muted">' + esc(f.note) + '</div>' : '') +
       '<div class="muted">' + esc(f.by) + ' · ' + fmtTime(f.ts) + ' · ' + tag +
       (f.handledBy ? '（' + esc(f.handledBy) + '）' : '') + '</div></div>' +
@@ -1275,21 +1279,26 @@ function openPassModal() {  $('#modal').innerHTML =
 document.addEventListener('click', guard(async (e) => {
   const id = e.target.id;
   if (id === 'b-find') {
-    const url = $('#f-url').value.trim();
-    if (!url) throw new Error('请填写链接');
+    const raw = $('#f-links').value.trim();
+    if (!raw) throw new Error('请填写链接');
     const note = $('#f-note').value.trim();
-    const res = await api('findings', { action: 'create', url, note });
+    let res = await api('findings', { action: 'create', links: raw, note });
     if (res.needConfirm) {
-      const ex = res.exists || {};
-      const msg = '⚠ 这条黑帖疑似已在黑水塘：\n标题：' + (ex.title || '（抓取失败）') +
-        '\n所属公告：' + (ex.postTitle || '（未知）') + '\n发布者：' + (ex.by || '') +
-        (ex.done ? '\n（该帖已在公告牌被标记完成）' : '') + '\n\n仍要提交发现吗？';
-      if (!confirm(msg)) return;
-      await api('findings', { action: 'create', url, note, force: true });
+      const dupes = res.dupes || [];
+      const msg = '⚠ 有 ' + dupes.length + ' 条疑似已在黑水塘/待处理：\n' +
+        dupes.slice(0, 5).map((d) => '· ' + (d.title || d.url) + '（' + (d.postTitle || '?') + '）').join('\n') +
+        (dupes.length > 5 ? '\n…等 ' + dupes.length + ' 条' : '') +
+        '\n\n仍要把这些也提交吗？（取消 = 只提交没重复的）';
+      if (confirm(msg)) {
+        res = await api('findings', { action: 'create', links: raw, note, force: true });
+      } else {
+        res = await api('findings', { action: 'create', links: raw, note, force: true, skipDupes: true });
+      }
     }
-    $('#f-url').value = ''; $('#f-note').value = '';
+    const skipped = res.skippedDupes || 0;
+    $('#f-links').value = ''; $('#f-note').value = '';
     await refreshAll();
-    tip('已提交，管理员会收到提醒', 'ok');
+    tip('已提交 ' + (res.submitted || 0) + ' 条发现，管理员会收到提醒' + (skipped ? '（跳过 ' + skipped + ' 条重复）' : ''), 'ok');
   }
   if (id === 'b-msg') {
     const text = $('#m-text').value.trim();
