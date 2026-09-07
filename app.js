@@ -127,8 +127,8 @@ function postState(p) {
 
 const STATE_TEXT = { fresh: '最新', urgent: '倒计时', expired: '已过期', done: '已完成' };
 
-/** 张真源粉丝暗语：浑水摸鱼板块若命中则提示「疑似张真源相关」，可一键转入黑水塘 */
-const ZZY_RE = /张真源|源源|小张张|张张|张哥|源哥|xzz|aqjj|57be|5be/i;
+/** 张真源粉丝暗语：浑水摸鱼板块若命中则提示「疑似张真源相关」，可单条转入黑水塘（5=单独出现的5，劳务/源=粉丝黑话） */
+const ZZY_RE = /张真源|源源|小张张|张张|张哥|源哥|xzz|aqjj|57be|5be|劳务|源|(?:^|[^0-9a-z])5(?![0-9a-z])/i;
 
 /** 投诉类型配置：云端 config/tags.json（次管理员及以上可在管理后台增改），拿不到时用默认四类 */
 const DEFAULT_TAGS = [
