@@ -456,6 +456,10 @@ function postCard(p) {
       ' · <b>' + fmtRemain(remainMs(p)) + '</b> · 我完成 ' + done + '/' + total + '</div>' +
     (p.note ? '<div class="meta">📝 ' + esc(p.note) + '</div>' : '') +
     '<div class="progress"><i style="width:' + pct + '%"></i></div>' +
+    (() => {
+      const mine = p.links.filter((l) => !isDone(l)).length;
+      return mine > 1 ? '<div class="links-tools"><button class="btn sm ghost" data-act="toggle-all" data-id="' + p.id + '">☑ 全选完成（' + mine + ' 条未完成）</button></div>' : '';
+    })() +
     '<ul class="links">' + p.links.map((l) => {
       const metaLine = l.meta ? [l.meta.author, l.meta.ip, l.meta.postTime, l.meta.group].filter(Boolean).join(' · ') : '';
       const salv = l.salvagedBy ? ' <span class="fish-tag" title="由 ' + esc(l.salvagedBy) + ' 打捞进新批次">🎣 已打捞</span>' : '';
@@ -525,7 +529,7 @@ function scriptHelp() {
       '<li><b>③ 回黑水塘投诉</b> —— 到「黑水塘」点公告里的「🚨 一键投诉」→ 选理由 → 自动跳转豆瓣并批量投诉；投诉完回来在链接前打 ✓ 记战绩</li>' +
     '</ol>' +
     '<div class="row">' +
-      '<a class="btn big" href="' + installUrl + '" target="_blank" rel="noopener">⬇ 第②步：直接安装脚本 v2.6.0</a>' +
+      '<a class="btn big" href="' + installUrl + '" target="_blank" rel="noopener">⬇ 第②步：直接安装脚本 v2.6.1</a>' +
       '<button class="btn ghost" data-act="copy-script-full">复制脚本全文</button>' +
       '<button class="btn ghost" data-act="download-script">下载到本地</button>' +
       (firstTime ? '<button class="btn ghost" data-act="guide-done">✓ 我装好了，以后不再弹出</button>' : '') +
@@ -708,12 +712,16 @@ function viewAdmin() {
         months.map((m) => '<option value="' + m + '"' + (m === cur ? ' selected' : '') + '>' + m + '</option>').join('') +
       '</select>' +
       '<button class="btn" data-act="rep-load">查看</button>' +
-      '<button class="btn ghost" data-act="rep-export">⬇ 下载 Excel（CSV）</button></div>' +
+      '<button class="btn ghost" data-act="rep-export">⬇ 下载 Excel（CSV）</button>' +
+      '<button class="btn ghost" data-act="rep-snapfill" title="对没有快照的帖子重新抓正文，帖子已删的抓不到">📸 补抓快照</button></div>' +
       (mlist.length ? '<div class="scroll-box"><table class="rep-table"><tr><th>#</th><th>板块</th><th>标题/链接</th><th>发帖人</th><th>IP</th><th>发帖时间</th><th>小组</th><th>上传人</th></tr>' +
         mlist.map((l) =>
           '<tr><td>' + l.seq + '</td><td>' + (l.board === 'fish' ? '🐟 浑水摸鱼' : '🎣 黑水塘') + '</td>' +
           '<td style="max-width:220px;word-break:break-all">' + (l.title ? esc(l.title) + '<br>' : '') +
-            '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.url) + '</a></td>' +
+            '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.url) + '</a>' +
+            (l.content
+              ? ' <a href="javascript:void(0)" data-act="snap-view" data-seq="' + l.seq + '" style="white-space:nowrap">📸 快照</a>'
+              : ' <span class="muted" title="发布于快照功能上线前或抓取时已删除">（无快照）</span>') + '</td>' +
           '<td>' + esc(l.author || '—') + '</td><td>' + esc(l.ip || '—') + '</td>' +
           '<td>' + esc(l.postTime || '—') + '</td><td>' + esc(l.group || '—') + '</td>' +
           '<td>' + esc(l.by || '—') + '</td></tr>').join('') + '</table></div>'
@@ -829,6 +837,12 @@ function renderAuth() {
 
 function paintAuth(msgHtml) {
   const card = $('#auth-card');
+  // 重绘前保留已输入的昵称/密码——切换小组"是/否"会重绘表单，不能把人填到一半的内容清掉
+  const prev = {
+    nick: ($('#i-nick') || {}).value || '',
+    pass: ($('#i-pass') || {}).value || '',
+    pass2: ($('#i-pass2') || {}).value || '',
+  };
   const isReg = authMode === 'register';
   const isInit = authMode === 'init';
   let html = '';
@@ -874,6 +888,9 @@ function paintAuth(msgHtml) {
     (!isInit && !isReg ? '<p class="hint">申请过入队？填好昵称后点「查询审核进度」即可看到是否通过。</p>' : '') +
     (msgHtml || '');
   card.innerHTML = html;
+  if (prev.nick) $('#i-nick').value = prev.nick;
+  if (prev.pass) $('#i-pass').value = prev.pass;
+  if (isReg && prev.pass2) $('#i-pass2').value = prev.pass2;
 
   card.querySelectorAll('input[type=file][data-upload]').forEach((inp) => {
     inp.onchange = guard(async () => {
@@ -1043,6 +1060,22 @@ async function doSalvage() {
   tip('已打捞 ' + r.count + ' 条链接，聚合成 ' + (r.created.length + r.filled.length) + ' 个新批次', 'ok');
 }
 
+/* ---------------- 月报快照弹窗 ---------------- */
+function openSnapModal(l) {
+  $('#modal').innerHTML =
+    '<div class="modal">' +
+      '<h3>📸 历史快照</h3>' +
+      '<p class="hint">' + esc(l.title || l.url) + ' · 上传人 ' + esc(l.by || '—') + ' · ' + fmtTime(l.addedAt) + '</p>' +
+      (l.content
+        ? '<div class="snap-text">' + esc(l.content) + '</div>'
+        : '<p class="hint">这条没有保存快照（可能发布于快照功能上线前，或抓取时帖子已被删除）。可点「📸 补抓快照」试试，帖子还在的话能补上。</p>') +
+      '<div class="row" style="margin-top:10px">' +
+        '<a class="btn ghost" href="' + esc(l.url) + '" target="_blank" rel="noopener">打开原帖</a>' +
+        '<button class="btn ghost" data-act="close-modal">关闭</button>' +
+      '</div></div>';
+  $('#mask').hidden = false;
+}
+
 /* ---------------- 事件 ---------------- */
 document.addEventListener('click', guard(async (e) => {
   const el = e.target.closest('[data-act]');
@@ -1209,6 +1242,34 @@ document.addEventListener('click', guard(async (e) => {
       showSkippedModal(skipList);
     }
     tip(msg, r.added ? 'ok' : 'warn');
+    return;
+  }
+
+  if (act === 'toggle-all') {
+    const post = (state.posts || []).find((x) => x.id === el.dataset.id);
+    const n = post ? post.links.filter((l) => !isDone(l)).length : 0;
+    if (!n) { tip('这一组你已经全部完成了', 'ok'); return; }
+    if (!confirm('把这组 ' + n + ' 条链接全部标记为已完成？（战绩 +' + n + '）')) return;
+    const r = await api('posts', { action: 'toggleAll', id: el.dataset.id });
+    await refreshAll();
+    tip('已一键完成 ' + r.added + ' 条，战绩 +' + r.added, 'ok');
+    return;
+  }
+  if (act === 'snap-view') {
+    const seq = Number(el.dataset.seq);
+    const l = ((state.report || {}).list || []).find((x) => x.seq === seq);
+    if (l) openSnapModal(l);
+    return;
+  }
+  if (act === 'rep-snapfill') {
+    const sel = document.getElementById('rep-month');
+    const month = sel ? sel.value : (state.report.selMonth || '');
+    tip('正在补抓快照（每次最多 20 条），请稍等…', 'ok');
+    const r = await api('report', { action: 'snapfill', month });
+    state.report.selMonth = month;
+    await loadReport();
+    safeRender();
+    tip(r.tried ? ('快照补抓完成：新保存 ' + r.filled + ' / 尝试 ' + r.tried + ' 条（已删的帖子抓不到）') : '该月快照已齐全，无需补抓', r.tried ? 'ok' : 'warn');
     return;
   }
 
