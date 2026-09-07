@@ -846,8 +846,15 @@ document.addEventListener('click', guard(async (e) => {
   if (act === 'add-link') {
     const more = prompt('粘贴要补充的链接（每行一个）：');
     if (!more) return;
-    await api('posts', { action: 'addLinks', id: el.dataset.id, links: more });
-    await refreshAll(); tip('已补充', 'ok');
+    const r = await api('posts', { action: 'addLinks', id: el.dataset.id, links: more });
+    await refreshAll();
+    let msg = '已补充 ' + (r.added || 0) + ' 条';
+    const skipList = r.skippedList || [];
+    if (skipList.length) {
+      msg += '，剔除 ' + skipList.length + ' 条重复';
+      showSkippedModal(skipList);
+    }
+    tip(msg, r.added ? 'ok' : 'warn');
     return;
   }
 
@@ -961,9 +968,50 @@ document.addEventListener('click', guard(async (e) => {
   if (act === 'close-modal') { $('#mask').hidden = true; return; }
 }));
 
-/* 修改密码弹窗 */
-function openPassModal() {
+/* 重复链接：发布前确认弹窗（列出每条重复及其所在公告），返回 'skip' / 'force' / null */
+function dupesModal(dupes, fresh) {
+  return new Promise((resolve) => {
+    const rows = dupes.map((d) =>
+      '<div class="dupe-row"><code>' + esc(d.url) + '</code>' +
+      '<span class="dupe-where">⚠ 已在：' + esc(d.postTitle || '未知公告') +
+      '（' + esc(d.by || '?') + ' 发布 · ' + (d.type === 'same' ? '同一帖子' : '同标题') + '）</span></div>'
+    ).join('');
+    $('#modal').innerHTML =
+      '<div class="modal">' +
+        '<h3>⚠ 有 ' + dupes.length + ' 条链接已在黑水塘</h3>' +
+        rows +
+        '<p class="hint">不重复的 ' + (fresh || 0) + ' 条不受影响。重复的帖子重复投诉没有意义，建议跳过。</p>' +
+        '<div class="row">' +
+          '<button class="btn" id="d-skip">跳过重复，发布其余</button>' +
+          '<button class="btn ghost" id="d-force">全部照发</button>' +
+          '<button class="btn ghost" id="d-cancel">取消</button>' +
+        '</div></div>';
+    $('#mask').hidden = false;
+    const done = (v) => { $('#mask').hidden = true; resolve(v); };
+    document.getElementById('d-skip').onclick = () => done('skip');
+    document.getElementById('d-force').onclick = () => done('force');
+    document.getElementById('d-cancel').onclick = () => done(null);
+  });
+}
+
+/* 重复链接：发布/补充后告知明细（哪几条被剔除、已在哪里） */
+function showSkippedModal(skipList) {
+  const rows = skipList.map((d) =>
+    '<div class="dupe-row"><code>' + esc(d.url) + '</code>' +
+    '<span class="dupe-where">已在：' + esc(d.postTitle || '未知公告') + '（' + esc(d.by || '?') + ' 发布）</span></div>'
+  ).join('');
   $('#modal').innerHTML =
+    '<div class="modal">' +
+      '<h3>♻ 已剔除 ' + skipList.length + ' 条重复链接</h3>' +
+      '<p class="hint">以下链接已在黑水池里，未重复上：</p>' +
+      rows +
+      '<div class="row"><button class="btn" id="d-ok">知道了</button></div></div>';
+  $('#mask').hidden = false;
+  document.getElementById('d-ok').onclick = () => { $('#mask').hidden = true; };
+}
+
+/* 修改密码弹窗 */
+function openPassModal() {  $('#modal').innerHTML =
     '<div class="modal">' +
       '<h3>🔑 修改密码</h3>' +
       '<p class="hint">账号：' + esc(state.me.nick) + '（' + esc(state.me.roleName) + '），修改后本次登录保持有效，下次登录请用新密码。</p>' +
@@ -984,16 +1032,27 @@ document.addEventListener('click', guard(async (e) => {
   if (id === 'b-pub') {
     const links = $('#p-links').value.trim();
     if (!links) throw new Error('请粘贴至少一个链接');
-    const r = await api('posts', {
+    const payload = {
       action: 'create', title: $('#p-title').value.trim(),
       links, note: $('#p-note').value.trim(),
-    });
+    };
+    let r = await api('posts', payload);
+    if (r.needConfirm) {
+      const choice = await dupesModal(r.dupes || [], r.fresh);
+      if (!choice) return;
+      payload.force = true;
+      payload.skipDupes = choice === 'skip';
+      r = await api('posts', payload);
+    }
     await refreshAll();
     const created = (r.created && r.created.length) || 0;
     const filled = (r.filled && r.filled.length) || 0;
-    const skip = r.skipped || 0;
+    const skipList = r.skippedList || [];
     let msg = '已聚合发布：新建 ' + created + ' 批、补入 ' + filled + ' 批';
-    if (skip) msg += '，跳过 ' + skip + ' 条重复';
+    if (skipList.length) {
+      msg += '，剔除 ' + skipList.length + ' 条重复';
+      showSkippedModal(skipList);
+    }
     tip(msg, 'ok');
   }
   if (id === 'b-find') {
