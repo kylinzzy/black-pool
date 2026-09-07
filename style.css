@@ -354,3 +354,7 @@ details.script-help .hint { margin-top: 10px; }
 .uf-tag { background: var(--danger) !important; color: #fff !important; }
 .post.flash { animation: postFlash 1.2s ease-in-out 2; }
 @keyframes postFlash { 0%, 100% { background: #fff; } 50% { background: var(--danger-soft); } }
+
+/* 脚本回报的失效链接标记 */
+.dead-tag { background: #fff3f2 !important; color: var(--danger) !important; border: 1px solid var(--danger); }
+.dead-note { font-size: 11.5px; color: var(--danger); background: #fff3f2; border-radius: 6px; padding: 3px 8px; margin-top: 3px; }
