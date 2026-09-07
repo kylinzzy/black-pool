@@ -354,6 +354,7 @@ function render() {
         '</div>' +
       '</aside>' +
       '<div class="content"><div class="inner">' +
+        noticeBarHtml() +
         '<section id="sec-pool">' + viewPool('zzy') + '</section>' +
         '<section id="sec-fish">' + viewPool('fish') + '</section>' +
         '<section id="sec-find">' + viewFind() + '</section>' +
@@ -689,7 +690,7 @@ function scriptHelp() {
       '<li><b>③ 回黑水塘投诉</b> —— 到「黑水塘」点公告里的「🚨 一键投诉」→ 选理由 → 自动跳转豆瓣并批量投诉；投诉完回来在链接前打 ✓ 记战绩</li>' +
     '</ol>' +
     '<div class="row">' +
-      '<a class="btn big" href="' + installUrl + '" target="_blank" rel="noopener">⬇ 第②步：直接安装脚本 v2.6.5</a>' +
+      '<a class="btn big" href="' + installUrl + '" target="_blank" rel="noopener">⬇ 第②步：直接安装脚本 v2.6.6</a>' +
       '<button class="btn ghost" data-act="copy-script-full">复制脚本全文</button>' +
       '<button class="btn ghost" data-act="download-script">下载到本地</button>' +
       (firstTime ? '<button class="btn ghost" data-act="guide-done">✓ 我装好了，以后不再弹出</button>' : '') +
@@ -818,7 +819,7 @@ function viewAdmin() {
       (n
         ? '<div class="nb-cur">当前公告：<b>' + esc(n.text) + '</b><span class="muted">（' + esc(n.by) + ' · ' + fmtTime(n.at) + ' · ' + ackN + ' 人已知晓）</span></div>'
         : '<div class="muted" style="margin-bottom:4px">当前没有生效的公告</div>') +
-      '<textarea id="notice-text" rows="2" placeholder="输入改版公告内容…（例如：站点已改版，请重装脚本 v2.6.5）">' + (n ? esc(n.text) : '') + '</textarea>' +
+      '<textarea id="notice-text" rows="2" placeholder="输入改版公告内容…（例如：站点已改版，请重装脚本 v2.6.6）">' + (n ? esc(n.text) : '') + '</textarea>' +
       '<div class="row" style="margin-top:8px">' +
         '<button class="btn sm" data-act="notice-save">📢 发布 / 更新公告</button>' +
         (n ? '<button class="btn sm danger" data-act="notice-del">撤下公告</button>' : '') +
