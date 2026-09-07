@@ -365,12 +365,18 @@ function viewPool(board) {
   const isFish = board === 'fish';
   const boardPosts = state.posts.filter((p) => (p.board || 'zzy') === board);
   const bucket = { all: [], fresh: [], urgent: [], expired: [], done: [] };
-  const counts = { all: boardPosts.length, fresh: 0, urgent: 0, expired: 0, done: 0 };
-  boardPosts.forEach((p) => { const s = postState(p); bucket[s].push(p); counts[s]++; });
-  bucket.all = boardPosts.slice().sort((a, b) => {
-    const sa = postState(a) === 'done' ? 1 : 0, sb = postState(b) === 'done' ? 1 : 0;
-    return sa - sb || b.createdAt - a.createdAt;
+  const counts = { all: 0, fresh: 0, urgent: 0, expired: 0, done: 0 };
+  // 已全部完成的批次只收进「已完成」；主视图（全部/最新/倒计时）只留待处理的，
+  // 这样点完最后一个链接的瞬间，公告自动从主视图收起 —— 与「点击完成的缩到已完成」一致。
+  boardPosts.forEach((p) => {
+    const s = postState(p);
+    bucket[s].push(p);
+    counts[s]++;
+    if (s !== 'done') { bucket.all.push(p); counts.all++; }
   });
+  // 各分类内部都按发布时间倒序：最新的永远排第一
+  const byNew = (a, b) => b.createdAt - a.createdAt;
+  Object.keys(bucket).forEach((k) => bucket[k].sort(byNew));
   const list = bucket[state.filter] || [];
 
   let html = '<div class="sec-title"><span class="ic">' + (isFish ? '🐟' : '🌊') + '</span>' + (isFish ? '浑水摸鱼' : '黑水塘') +
