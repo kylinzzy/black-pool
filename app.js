@@ -458,17 +458,13 @@ function postCard(p) {
   const staff = state.me.role !== 'member';
   const canDel = state.me.role === 'admin' || state.me.role === 'deputy'; // 整删仅最高/次级
   const isFish = (p.board || 'zzy') === 'fish';
-  // 🕵️ 张真源暗语检测：浑水摸鱼批次命中粉丝缩写/昵称 → 提示疑似，可一键转入黑水塘
-  const zzyHit = isFish && ZZY_RE.test(p.title + ' ' + (p.note || '') + ' ' + (p.links || []).map((l) => l.title || '').join(' '));
 
   return '<div class="card post ' + (st === 'done' ? 'done' : '') + (p.urgent ? ' urgent' : '') + '" id="post-' + p.id + '">' +
     '<div class="head"><div class="title">' + (isFish ? '<span class="fish-tag">🐟 浑水摸鱼</span> ' : '') + esc(p.title) +
       (p.urgent ? ' <span class="fish-tag uf-tag">⚡ 重要且紧急</span>' : '') +
-      (zzyHit ? ' <span class="fish-tag uf-tag" title="标题/备注/链接标题命中张真源粉丝暗语（xzz·aqjj·源源·小张张等）">⚠️ 疑似张真源</span>' : '') +
       (tagBadge(p.tag) ? ' <span class="fish-tag">' + esc(tagBadge(p.tag)) + '</span>' : '') + '</div>' +
       '<span style="display:flex;gap:6px;align-items:center;white-space:nowrap">' +
         (staff ? '<button class="btn sm ghost" data-act="rename-post" data-id="' + p.id + '" title="改标题，让大家知道这批投诉什么">✏️</button>' : '') +
-        (zzyHit && staff ? '<button class="btn sm" data-act="move-board" data-id="' + p.id + '" title="这批其实是张真源相关，转入黑水塘让打黑员处理">→ 转入黑水塘</button>' : '') +
         (staff ? '<button class="btn sm ' + (p.urgent ? 'danger' : 'ghost') + '" data-act="urgent-toggle" data-id="' + p.id + '" data-u="' + (p.urgent ? '0' : '1') + '" title="重要且紧急：全员弹窗 + 红色浮窗强提醒">' + (p.urgent ? '解除⚡紧急' : '⚡设为紧急') + '</button>' : '') +
         '<span class="state ' + st + '">' + STATE_TEXT[st] + '</span>' +
       '</span></div>' +
@@ -485,15 +481,20 @@ function postCard(p) {
       const metaLine = l.meta ? [l.meta.author, l.meta.ip, l.meta.postTime, l.meta.group].filter(Boolean).join(' · ') : '';
       const salv = l.salvagedBy ? ' <span class="fish-tag" title="由 ' + esc(l.salvagedBy) + ' 打捞进新批次">🎣 已打捞</span>' : '';
       const dead = l.deadReport ? ' <span class="fish-tag dead-tag">⚠️ 已被删除</span>' : '';
+      // 🕵️ 链接级张真源暗语检测（仅浑水摸鱼板块）：命中标题暗语的链接单独标记，可单条转入黑水塘
+      const lZzy = isFish && ZZY_RE.test(l.title || '');
+      const zzyMove = (lZzy && staff && !l.deadReport)
+        ? ' <button class="btn sm" data-act="move-link" data-id="' + p.id + '" data-lid="' + l.id + '" title="这条疑似张真源相关，转入黑水塘（按投诉类型自动聚合）">→ 黑水塘</button>' : '';
       return '<li class="' + (isDone(l) ? 'ok' : '') + '">' +
         '<input type="checkbox" ' + (isDone(l) ? 'checked' : '') + ' data-act="toggle" data-id="' + p.id + '" data-lid="' + l.id + '">' +
         '<span style="min-width:0;flex:1">' +
-          (l.title ? '<div class="ltitle">' + esc(l.title) + salv + dead + '</div>' : salv + dead) +
+          (l.title ? '<div class="ltitle">' + esc(l.title) + (lZzy ? ' <span class="fish-tag uf-tag" title="标题命中张真源粉丝暗语（xzz·aqjj·源源·小张张等）">⚠️ 疑似张真源</span>' : '') + salv + dead + '</div>' : salv + dead) +
           (l.deadReport ? '<div class="dead-note">⚠️ 脚本运行显示此条已被删除，请捞黑员确认并删除失效内容（' + esc(l.deadReport.by) + ' 回报于 ' + fmtTime(l.deadReport.at) + '）</div>' : '') +
           '<span class="url" title="' + esc(l.url) + '">' + esc(l.url) + '</span>' +
           (metaLine ? '<div class="lmeta">' + esc(metaLine) + '</div>' : '') +
         '</span>' +
         (staff ? '<button class="btn sm danger" data-act="del-link" data-id="' + p.id + '" data-lid="' + l.id + '" title="删除这条链接（进操作记录）">✕</button>' : '') +
+        zzyMove +
         '<button class="btn sm ghost" data-act="copy-one" data-url="' + esc(l.url) + '">复制</button>' +
         '<button class="btn sm ghost" data-act="open-one" data-url="' + esc(l.url) + '">打开</button>' +
       '</li>';
@@ -1446,15 +1447,16 @@ document.addEventListener('click', guard(async (e) => {
     tip('投诉类型已保存，全员生效', 'ok');
     return;
   }
-  if (act === 'move-board') {
-    const id = el.dataset.id;
+  if (act === 'move-link') {
+    const id = el.dataset.id, lid = el.dataset.lid;
     const post = (state.posts || []).find((x) => x.id === id);
-    if (!post) return;
-    if (!confirm('把这批「' + post.title + '」整体转入黑水塘？（月度报表的板块归属会同步修正）')) return;
-    const r = await api('posts', { action: 'moveBoard', id, board: 'zzy' });
-    post.board = r.post.board;
+    const link = post && (post.links || []).find((x) => x.id === lid);
+    if (!link) return;
+    if (!confirm('把「' + (link.title || link.url).slice(0, 40) + '」转入黑水塘？\n（会按投诉类型自动聚合进黑水塘批次，月度报表板块同步修正）')) return;
+    const r = await api('posts', { action: 'moveLinks', id, linkIds: [lid] });
+    post.links = r.post.links;
+    await refreshAll();
     tip('已转入黑水塘 ✅（后台审计已记录）', 'ok');
-    safeRender();
     return;
   }
 
@@ -1559,7 +1561,7 @@ document.addEventListener('click', guard(async (e) => {
     tip(msg, 'ok');
     // 🕵️ 发布到浑水摸鱼但命中张真源暗语 → 立刻提醒确认板块
     if (board === 'fish' && ZZY_RE.test(payload.title + ' ' + payload.note + ' ' + payload.links)) {
-      setTimeout(() => alert('⚠️ 张真源暗语提醒：这批内容命中了粉丝暗语（xzz / aqjj / 源源 / 小张张 等）。\n张真源相关应发布到「黑水塘」，请到浑水摸鱼批次卡片点「→ 转入黑水塘」。'), 300);
+      setTimeout(() => alert('⚠️ 张真源暗语提醒：这批内容命中了粉丝暗语（xzz / aqjj / 源源 / 小张张 等）。\n若只有个别链接是张真源相关，发布后在该批次里点那条链接的「→ 黑水塘」单独转走。'), 300);
     }
     return;
   }
