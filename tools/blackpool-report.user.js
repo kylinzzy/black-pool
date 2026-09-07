@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         净化阿北 · 投诉助手
 // @namespace    https://github.com/kylinwu
-// @version      2.6.5
-// @description  豆瓣小组帖子一键批量投诉 v2.6.5 — 与「净化阿北」网站联动，从网站跳转过来自动导入链接与投诉理由并开始批量投诉
+// @version      2.6.6
+// @description  豆瓣小组帖子一键批量投诉 v2.6.6 — 与「净化阿北」网站联动，从网站跳转过来自动导入链接与投诉理由并开始批量投诉
 // @author       kylinwu💚爱妻
 // @match        https://www.douban.com/group/topic/*
 // @match        https://www.douban.com/group/*/topic/*
@@ -43,7 +43,7 @@
    *   关闭按钮: .drc-modal-close
    */
 
-  var VERSION = '2.6.5';
+  var VERSION = '2.6.6';
   var AUTHOR = 'kylinwu💚爱妻';
   var stopFlag = false;
 
@@ -643,7 +643,7 @@
       var txt = '';
       for (var i = 0; i < tips.length; i++) txt += tips[i].textContent || '';
       if (/已投诉|重复投诉|已经投诉/.test(txt)) {
-        log('ℹ️ 豆瓣提示已投诉过（重复投诉不再受理、不再发豆邮）');
+        log('ℹ️ 豆瓣提示已投诉过');
         console.log('[豆瓣投诉] 重复投诉提示:', txt.trim().slice(0, 60));
         return true;
       }
@@ -859,7 +859,6 @@
         '<button class="kp-stop-btn" id="kp-stop">■ 停止</button>' +
         '<div class="kp-status" id="kp-st">' + (batchMode ? '准备执行…' : '就绪') + '</div>' +
         (batchMode ? '' : '<div class="kp-pg"><div class="kp-pg-bar" id="kp-pgb"></div></div>') +
-        '<div style="font-size:10px;color:#7a8b7a;margin:4px 2px 0;line-height:1.5">📮 没收到豆邮不代表失败：豆瓣不保证每次投诉都发信，重复投诉尤其可能没有。成功与否以本面板日志和页面提示为准。</div>' +
         '<div class="kp-ft">合理使用 · 请勿滥用</div></div>';
 
     document.body.appendChild(panel);
