@@ -212,8 +212,23 @@ async function loadReport() {
     state.report.list = m.list || [];
     state.report.byDayMonth = m.byDay || [];
   }
-  // 操作审计（谁删了公告/链接）
-  api('admin', { action: 'audit' }).then((a) => { state.audit = a.items || []; safeRender(); }).catch(() => {});
+  // 操作审计（处理黑帖 / 发布 / 删除等全部操作）
+  api('admin', { action: 'audit' }).then((a) => {
+    state.audit = a.items || [];
+    // 最高 / 次管理员：默认加载当月操作表
+    if (state.me && (state.me.role === 'admin' || state.me.role === 'deputy') && !state.ops) {
+      loadOps().catch(() => {});
+    }
+    safeRender();
+  }).catch(() => {});
+}
+
+/** 加载月度操作表（仅最高 / 次管理员） */
+async function loadOps() {
+  const month = (state.report && state.report.opsMonth) ||
+    new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 7);
+  const r = await api('report', { action: 'ops', month });
+  state.ops = { month: r.month, summary: r.summary || [], items: r.items || [] };
 }
 
 /** 用户正在输入框打字时不重绘，避免内容被清掉；重绘后保持滚动位置 */
@@ -575,15 +590,15 @@ function viewAdmin() {
   html += '<div class="card"><h3>👥 成员管理</h3>' +
     '<div class="row"><input type="text" id="u-nick" placeholder="新执法者昵称"><input type="text" id="u-pass" placeholder="初始密码">' +
     '<button class="btn" id="b-adduser">新增执法者</button></div>' +
-    '<p class="hint">捞黑员可增加 / 剔除执法者；次管理员与捞黑员的任免只有最高管理员能操作。次管理员可审批入队与捞黑员申请（最多 2 人' + (isAdmin ? '，当前 ' + deputyCount + ' 人' : '') + '）。</p>' +
+    '<p class="hint">捞黑员可增加 / 剔除执法者；最高管理员与次管理员都可提升执法者为捞黑员（次管理员的任免只有最高管理员能操作，最多 2 人' + (isAdmin ? '，当前 ' + deputyCount + ' 人' : '') + '）。</p>' +
     '<div style="margin-top:10px">' + (state.users || []).map((u) =>
       '<div class="finding"><div class="u"><b>' + esc(u.nick) + '</b>' + roleBadge(u.role) +
       '<div class="muted">加入于 ' + fmtTime(u.createdAt) + '</div></div>' +
       (u.role === 'admin' ? '' :
         '<div class="row" style="flex-direction:column;gap:6px">' +
-        (isAdmin && u.role === 'member' ? '<button class="btn sm" data-act="promote" data-nick="' + esc(u.nick) + '">提升为捞黑员</button>' : '') +
+        (approver && u.role === 'member' ? '<button class="btn sm" data-act="promote" data-nick="' + esc(u.nick) + '">提升为捞黑员</button>' : '') +
         (isAdmin && u.role !== 'deputy' ? '<button class="btn sm ghost" data-act="set-deputy" data-nick="' + esc(u.nick) + '">设为次管理员</button>' : '') +
-        (isAdmin && u.role === 'mod' ? '<button class="btn sm ghost" data-act="demote" data-nick="' + esc(u.nick) + '">降级为执法者</button>' : '') +
+        (approver && u.role === 'mod' ? '<button class="btn sm ghost" data-act="demote" data-nick="' + esc(u.nick) + '">降级为执法者</button>' : '') +
         (isAdmin && u.role === 'deputy' ? '<button class="btn sm ghost" data-act="demote" data-nick="' + esc(u.nick) + '">卸任次管理员（降为执法者）</button>' : '') +
         '<button class="btn sm danger" data-act="remove-user" data-nick="' + esc(u.nick) + '">剔除</button>' +
         '</div>') +
@@ -634,17 +649,62 @@ function viewAdmin() {
       '<div class="row"><button class="btn ghost" data-act="rep-refresh-info">🔄 补抓缺失的黑帖信息</button></div>' +
       '</div>';
 
-    // 🧾 操作记录（谁删了公告 / 链接）
+    // 🧾 操作记录：最高/次管理员 = 今日动态（可展开）+ 月度操作表（可下载）；捞黑员 = 删除记录
     const audit = state.audit || [];
-    html += '<div class="card"><h3>🧾 操作记录</h3>' +
-      (audit.length ? '<table class="rep-table"><tr><th>时间</th><th>操作人</th><th>操作</th><th>内容</th></tr>' +
-        audit.slice(0, 50).map((a) =>
-          '<tr><td style="white-space:nowrap">' + fmtTime(a.at) + '</td>' +
-          '<td>' + esc(a.by) + '<span class="muted">（' + esc(({ admin: '最高管理员', deputy: '次管理员', mod: '捞黑员', member: '执法者' })[a.role] || a.role) + '）</span></td>' +
-          '<td style="white-space:nowrap">' + esc(a.action) + '</td>' +
-          '<td style="word-break:break-all">' + esc(a.detail) + '</td></tr>').join('') + '</table>'
-        : '<div class="empty">暂无删除操作记录</div>') +
+    const ROLE_TXT = { admin: '最高管理员', deputy: '次管理员', mod: '捞黑员', member: '执法者' };
+    const auditRow = (a) =>
+      '<tr><td style="white-space:nowrap">' + fmtTime(a.at) + '</td>' +
+      '<td>' + esc(a.by) + '<span class="muted">（' + esc(ROLE_TXT[a.role] || a.role) + '）</span></td>' +
+      '<td style="white-space:nowrap">' + esc(a.action) + '</td>' +
+      '<td style="word-break:break-all">' + esc(a.detail) + '</td></tr>';
+
+    if (approver) {
+      // 今日动态速览
+      const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+      const td = audit.filter((a) => new Date(a.at + 8 * 3600 * 1000).toISOString().slice(0, 10) === today);
+      const cnt = (act) => td.filter((a) => a.action === act).length;
+      const doers = [...new Set(td.filter((a) => a.action === '处理黑帖').map((a) => a.by))];
+      const pubs = [...new Set(td.filter((a) => a.action === '发布公告' || a.action === '补链接').map((a) => a.by))];
+      html += '<div class="card"><h3>🧾 操作记录</h3>' +
+        '<div class="stats">' +
+          '<div class="stat"><b>今日处理黑帖</b><span>' + cnt('处理黑帖') + '<small style="font-size:11px;color:#8a8f8a">（' + doers.length + ' 人' + (doers.length ? '：' + esc(doers.join('、')) : '') + '）</small></span></div>' +
+          '<div class="stat"><b>今日上传公告</b><span>' + (cnt('发布公告') + cnt('补链接')) + '<small style="font-size:11px;color:#8a8f8a">（' + pubs.length + ' 人' + (pubs.length ? '：' + esc(pubs.join('、')) : '') + '）</small></span></div>' +
+          '<div class="stat"><b>今日删除</b><span>' + (cnt('删除公告') + cnt('删除链接')) + '</span></div>' +
+        '</div>' +
+        '<div class="row" style="margin-top:10px"><button class="btn ghost sm" data-act="audit-toggle">' + (state.auditOpen ? '▲ 收起完整记录' : '▼ 展开完整操作记录') + '</button></div>' +
+        (state.auditOpen ?
+          (audit.length ? '<table class="rep-table" style="margin-top:8px"><tr><th>时间</th><th>操作人</th><th>操作</th><th>内容</th></tr>' +
+            audit.slice(0, 200).map(auditRow).join('') + '</table>'
+            : '<div class="empty">暂无操作记录</div>') : '') +
       '</div>';
+
+      // 月度操作表（可下载，捞黑员不可见）
+      const ops = state.ops;
+      const opMonths = [...new Set([new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 7)].concat(audit.map((a) => new Date(a.at + 8 * 3600 * 1000).toISOString().slice(0, 7))))].sort().reverse();
+      html += '<div class="card"><h3>📊 月度操作表</h3>' +
+        '<div class="row"><select id="ops-month" style="flex:1">' +
+          opMonths.map((m) => '<option value="' + m + '"' + (ops && ops.month === m ? ' selected' : '') + '>' + m + '</option>').join('') +
+        '</select><button class="btn sm" data-act="ops-load">查看</button>' +
+        '<button class="btn ghost sm" data-act="ops-export">⬇ 下载 CSV</button></div>' +
+        (ops ? (
+          (ops.summary.length ? '<table class="rep-table" style="margin-top:10px"><tr><th>成员</th><th>处理黑帖</th><th>发布/补链</th><th>删除</th><th>调整权限</th></tr>' +
+            ops.summary.map((p) =>
+              '<tr><td>' + esc(p.nick) + '<span class="muted">（' + esc(ROLE_TXT[p.role] || p.role) + '）</span></td>' +
+              '<td>' + p.done + '</td><td>' + (p.pub + p.add) + '</td>' +
+              '<td>' + (p.delPost + p.delLink) + '</td><td>' + p.roleChg + '</td></tr>').join('') + '</table>'
+            : '<p class="hint">该月暂无操作记录。</p>') +
+          (ops.items.length ? '<details style="margin-top:8px"><summary style="cursor:pointer;color:#57705f">明细（' + ops.items.length + ' 条）</summary>' +
+            '<table class="rep-table"><tr><th>时间</th><th>操作人</th><th>操作</th><th>内容</th></tr>' +
+            ops.items.slice(0, 500).map(auditRow).join('') + '</table></details>' : '')
+        ) : '<p class="hint">加载中…</p>') +
+      '</div>';
+    } else {
+      html += '<div class="card"><h3>🧾 操作记录</h3>' +
+        (audit.length ? '<table class="rep-table"><tr><th>时间</th><th>操作人</th><th>操作</th><th>内容</th></tr>' +
+          audit.slice(0, 50).map(auditRow).join('') + '</table>'
+          : '<div class="empty">暂无删除操作记录</div>') +
+      '</div>';
+    }
   }
 
   return html;
@@ -965,6 +1025,30 @@ document.addEventListener('click', guard(async (e) => {
     state.report.selMonth = sel ? sel.value : state.report.selMonth;
     await loadReport();
     safeRender(); tip('已加载 ' + state.report.selMonth + ' 月报', 'ok');
+    return;
+  }
+  if (act === 'audit-toggle') { state.auditOpen = !state.auditOpen; render(); return; }
+  if (act === 'ops-load') {
+    state.report = state.report || {};
+    state.report.opsMonth = $('#ops-month').value;
+    await loadOps(); safeRender(); return;
+  }
+  if (act === 'ops-export') {
+    tip('正在生成操作表 CSV…', 'ok');
+    const month = $('#ops-month').value;
+    const res = await fetch(API + '/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-token': state.token },
+      body: JSON.stringify({ action: 'opsExport', month }),
+    });
+    if (!res.ok) throw new Error('导出失败');
+    const text = await res.text();
+    const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '操作记录-' + month + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    tip('已下载', 'ok');
     return;
   }
   if (act === 'rep-export') {
