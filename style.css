@@ -358,3 +358,22 @@ details.script-help .hint { margin-top: 10px; }
 /* 脚本回报的失效链接标记 */
 .dead-tag { background: #fff3f2 !important; color: var(--danger) !important; border: 1px solid var(--danger); }
 .dead-note { font-size: 11.5px; color: var(--danger); background: #fff3f2; border-radius: 6px; padding: 3px 8px; margin-top: 3px; }
+
+/* 📣 改版公告：页面顶部长条通知栏（sticky 常驻顶部），点「已知晓」各自消失 */
+.notice-bar {
+  position: sticky; top: 0; z-index: 500;
+  display: flex; align-items: flex-start; gap: 8px;
+  background: linear-gradient(180deg, #fff8e6, #fdf1d2);
+  border: 1px solid #ecd9a8; border-left: 4px solid var(--warn);
+  border-radius: 10px; padding: 8px 10px; margin: 2px 0 10px;
+  box-shadow: 0 4px 14px rgba(192, 131, 26, .18);
+}
+.notice-bar .nb-ic { font-size: 16px; line-height: 1.5; }
+.notice-bar .nb-text { flex: 1; min-width: 0; font-size: 13px; color: #6b4a0e; word-break: break-word; line-height: 1.55; }
+.notice-bar .nb-meta { display: block; font-size: 11px; color: #ab8a3a; margin-top: 1px; }
+.notice-bar .nb-ack { flex: 0 0 auto; background: var(--warn); border-color: var(--warn); color: #fff; white-space: nowrap; }
+.notice-bar .nb-ack:hover { background: #a86e12; border-color: #a86e12; }
+
+/* 管理后台：当前公告回显 */
+.nb-cur { background: #fdf6e3; border: 1px dashed #ecd9a8; border-radius: 8px; padding: 6px 10px; font-size: 12.5px; margin-bottom: 6px; word-break: break-word; }
+.nb-cur .muted { margin-left: 4px; }
