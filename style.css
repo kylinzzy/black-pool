@@ -272,3 +272,14 @@ details.script-help .hint { margin-top: 10px; }
 .dupe-row { margin: 8px 0; padding: 8px 10px; background: #f4f7f4; border-radius: 8px; font-size: 13px; word-break: break-all; }
 .dupe-row code { font-size: 12px; color: #2f5e42; }
 .dupe-row .dupe-where { display: block; color: #9a6b2f; margin-top: 4px; }
+
+/* 黑帖标题与元信息 */
+.ltitle { font-weight: 600; font-size: 13px; color: #2f5e42; margin-bottom: 2px; }
+.lmeta { font-size: 11.5px; color: #8a8f8a; margin-top: 2px; }
+.links li { align-items: flex-start; }
+
+/* 报表表格 */
+.rep-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
+.rep-table th, .rep-table td { border-bottom: 1px solid #e3e8e3; padding: 6px 8px; text-align: left; vertical-align: top; }
+.rep-table th { color: #57705f; font-weight: 600; white-space: nowrap; }
+.rep-table a { color: #2f5e42; word-break: break-all; }
