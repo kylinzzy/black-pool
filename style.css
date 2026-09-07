@@ -329,3 +329,28 @@ details.script-help .hint { margin-top: 10px; }
 
 /* 月报历史快照正文 */
 .snap-text { max-height: 50vh; overflow: auto; white-space: pre-wrap; word-break: break-all; background: #f4f8f5; border: 1px solid #e3e8e3; border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.7; color: #3a4a3f; }
+
+/* ⚡ 重要且紧急：红色置顶浮窗 */
+.urgent-float {
+  position: fixed; top: 12px; right: 12px; z-index: 850;
+  width: 320px; max-width: calc(100vw - 24px); max-height: 70vh; overflow: auto;
+  background: #fff; border: 2px solid var(--danger); border-radius: 12px;
+  box-shadow: 0 10px 34px rgba(171, 59, 48, .35); padding: 10px 12px;
+  animation: ufPulse 1.8s ease-in-out infinite;
+}
+@keyframes ufPulse { 0%, 100% { box-shadow: 0 10px 34px rgba(171, 59, 48, .35); } 50% { box-shadow: 0 10px 44px rgba(171, 59, 48, .6); } }
+.urgent-float .uf-head { font-weight: 700; color: #fff; background: var(--danger); border-radius: 8px; padding: 5px 10px; font-size: 13px; margin-bottom: 8px; animation: ufPulse 1.8s ease-in-out infinite; }
+.urgent-float .uf-post { border-top: 1px dashed #eecfcb; padding: 6px 0; }
+.urgent-float .uf-post:first-of-type { border-top: none; }
+.urgent-float .uf-t { font-weight: 600; font-size: 13px; word-break: break-all; }
+.urgent-float .uf-t a { font-weight: 400; font-size: 12px; margin-left: 4px; white-space: nowrap; }
+.urgent-float .uf-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 12.5px; }
+.urgent-float .uf-row > a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--danger); word-break: break-all; }
+.urgent-float .uf-row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--danger); cursor: pointer; }
+.urgent-float .uf-foot { font-size: 11px; color: var(--ink-2); margin-top: 6px; text-align: center; }
+
+/* ⚡ 紧急公告卡标红 + 紧急徽章 + 定位闪烁 */
+.post.urgent { border: 1.5px solid var(--danger); box-shadow: 0 4px 18px rgba(171, 59, 48, .18); }
+.uf-tag { background: var(--danger) !important; color: #fff !important; }
+.post.flash { animation: postFlash 1.2s ease-in-out 2; }
+@keyframes postFlash { 0%, 100% { background: #fff; } 50% { background: var(--danger-soft); } }
