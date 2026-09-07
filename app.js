@@ -534,6 +534,7 @@ function msgBlock(m, kids) {
 function viewAdmin() {
   const isAdmin = state.me.role === 'admin';
   const approver = canApprove();
+  const staff = state.me.role !== 'member'; // 报表可见范围：最高管理员/次管理员/捞黑员
   let html = '<div class="sec-title"><span class="ic">⚙️</span>管理后台<small>成员、注册申请、捞黑员申请</small></div>';
 
   const pendRegs = state.regs || [];
@@ -581,8 +582,8 @@ function viewAdmin() {
         '</div></div>').join('') : '<div class="empty">暂无待审批申请</div>') + '</div>';
   }
 
-  // 📊 日汇总 + 月汇报（仅最高管理员 / 次管理员）
-  if (approver) {
+  // 📊 日汇总 + 月汇报（最高管理员 / 次管理员 / 捞黑员）
+  if (staff) {
     const rep = state.report || {};
     const byDay = rep.byDay || [];
     const mlist = rep.list || [];
