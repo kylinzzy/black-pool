@@ -199,6 +199,10 @@ async function boot() {
 
 async function refreshAll() {
   const isStaff = state.me && state.me.role !== 'member';
+  // 改版公告：全员可见（独立请求，不占下面 jobs 的固定下标）
+  api('admin', { action: 'noticeInfo' })
+    .then((r) => { state.notice = (r && r.notice) || null; safeRender(); })
+    .catch(() => {});
   const jobs = [
     api('posts', { action: 'list' }).catch(() => ({ posts: [] })),
     api('findings', { action: 'list' }).catch(() => ({ findings: [] })),
@@ -495,6 +499,20 @@ function postCard(p) {
     '</div></div>';
 }
 
+/** 📣 改版公告长条：置顶通知栏，有生效公告且我未点「已知晓」时出现；点了只让自己这条消失 */
+function noticeBarHtml() {
+  const n = state.notice;
+  if (!n || !n.text) return '';
+  if (n.acks && n.acks[state.me.nick]) return '';
+  return '<div class="notice-bar" id="notice-bar">' +
+    '<span class="nb-ic">📣</span>' +
+    '<div class="nb-text">' + esc(n.text) +
+      '<span class="nb-meta">' + esc(n.by) + ' · ' + fmtTime(n.at) + ' · 改版公告</span></div>' +
+    '<button class="btn sm nb-ack" data-act="notice-ack">已知晓</button>' +
+    (state.me.role === 'admin' ? '<button class="btn sm ghost" data-act="notice-del" title="撤下公告（全员消失）">✕</button>' : '') +
+  '</div>';
+}
+
 /** ⚡ 红色置顶浮窗：有「重要且紧急」公告且我还有未处理链接时强提醒，全部处理完自动消失 */
 function urgentFloatHtml() {
   if (!state.me) return '';
@@ -671,7 +689,7 @@ function scriptHelp() {
       '<li><b>③ 回黑水塘投诉</b> —— 到「黑水塘」点公告里的「🚨 一键投诉」→ 选理由 → 自动跳转豆瓣并批量投诉；投诉完回来在链接前打 ✓ 记战绩</li>' +
     '</ol>' +
     '<div class="row">' +
-      '<a class="btn big" href="' + installUrl + '" target="_blank" rel="noopener">⬇ 第②步：直接安装脚本 v2.6.3</a>' +
+      '<a class="btn big" href="' + installUrl + '" target="_blank" rel="noopener">⬇ 第②步：直接安装脚本 v2.6.4</a>' +
       '<button class="btn ghost" data-act="copy-script-full">复制脚本全文</button>' +
       '<button class="btn ghost" data-act="download-script">下载到本地</button>' +
       (firstTime ? '<button class="btn ghost" data-act="guide-done">✓ 我装好了，以后不再弹出</button>' : '') +
@@ -790,6 +808,22 @@ function viewAdmin() {
           '<button class="btn sm ghost" data-act="reg-reject" data-nick="' + esc(r.nick) + '">拒绝</button>'
         : '<span class="muted">需管理员审批</span>') +
       '</div></div>').join('') : '<div class="empty">暂无待审核的入队申请</div>') + '</div>';
+
+  // 📣 改版公告（只有最高管理员能发）：发布后全员页面顶部长条出现，各自点「已知晓」消失
+  if (isAdmin) {
+    const n = state.notice;
+    const ackN = n && n.acks ? Object.keys(n.acks).length : 0;
+    html += '<div class="card"><h3>📣 改版公告（顶部长条通知栏）</h3>' +
+      '<p class="hint">发布后所有成员页面顶部出现小长条，点「已知晓」各自消失；再次发布会替换旧公告，所有人重新看到。</p>' +
+      (n
+        ? '<div class="nb-cur">当前公告：<b>' + esc(n.text) + '</b><span class="muted">（' + esc(n.by) + ' · ' + fmtTime(n.at) + ' · ' + ackN + ' 人已知晓）</span></div>'
+        : '<div class="muted" style="margin-bottom:4px">当前没有生效的公告</div>') +
+      '<textarea id="notice-text" rows="2" placeholder="输入改版公告内容…（例如：站点已改版，请重装脚本 v2.6.4）">' + (n ? esc(n.text) : '') + '</textarea>' +
+      '<div class="row" style="margin-top:8px">' +
+        '<button class="btn sm" data-act="notice-save">📢 发布 / 更新公告</button>' +
+        (n ? '<button class="btn sm danger" data-act="notice-del">撤下公告</button>' : '') +
+      '</div></div>';
+  }
 
   const deputyCount = (state.users || []).filter((u) => u.role === 'deputy').length;
   html += '<div class="card"><h3>👥 成员管理</h3>' +
@@ -1245,6 +1279,29 @@ document.addEventListener('click', guard(async (e) => {
     return;
   }
   if (act === 'mode') { authMode = el.dataset.m; paintAuth(); return; }
+  if (act === 'notice-ack') {
+    await api('admin', { action: 'noticeAck' });
+    state.notice = null; // 我已知晓，长条立刻消失（只影响自己）
+    render();
+    return;
+  }
+  if (act === 'notice-save') {
+    const ta = $('#notice-text');
+    const text = (ta ? ta.value : '').trim();
+    if (!text) throw new Error('公告内容不能为空');
+    await api('admin', { action: 'noticeSave', text });
+    await refreshAll();
+    tip('改版公告已发布，全员页面顶部可见', 'ok');
+    return;
+  }
+  if (act === 'notice-del') {
+    if (!confirm('撤下当前改版公告？所有人的长条都会消失。')) return;
+    await api('admin', { action: 'noticeDelete' });
+    state.notice = null;
+    render();
+    tip('公告已撤下', 'ok');
+    return;
+  }
   if (act === 'urgent-ack') { $('#mask').hidden = true; return; }
   if (act === 'urgent-go') { $('#mask').hidden = true; gotoPost(el.dataset.id); return; }
   if (act === 'uf-goto') { gotoPost(el.dataset.id); return; }
