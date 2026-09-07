@@ -456,18 +456,22 @@ function statsCard() {
 /* 脚本安装引导：默认折叠，点开展开；提供直接安装/复制全文/下载三种方式 */
 function scriptHelp() {
   const installUrl = API + '/script.user.js';
-  return '<details class="card script-help">' +
-    '<summary>🛠 第一次使用？点此展开 · 安装投诉脚本（老成员可折叠）</summary>' +
+  const firstTime = !localStorage.getItem('bp_guide_done');
+  const open = firstTime ? ' open' : '';
+  const cls = firstTime ? 'card script-help first' : 'card script-help';
+  return '<details class="' + cls + '"' + open + '>' +
+    '<summary>' + (firstTime ? '⚠️ 新成员必读：三步学会投诉（点此折叠）' : '🛠 第一次使用？点此展开 · 安装投诉脚本（老成员可折叠）') + '</summary>' +
     '<p class="hint">这个投诉脚本的链接一般人看不到，需先在浏览器装好「油猴 Tampermonkey」插件，再安装本站的专属脚本；之后点任意公告里的「🚨 一键投诉」才会自动批量投诉。</p>' +
     '<ol class="steps">' +
-      '<li>电脑/手机浏览器安装 <b>Tampermonkey（油猴）</b> 插件</li>' +
-      '<li>点下面「直接安装」，油猴会弹出安装框；如果没弹（或打开了代码页），改用「复制脚本全文」→ 油猴面板 → 添加新脚本 → 全选粘贴 → 保存</li>' +
-      '<li>回到黑水塘，点公告「🚨 一键投诉」→ 选理由 → 自动跳转并批量投诉</li>' +
+      '<li><b>① 安装油猴插件</b> —— 电脑/手机浏览器安装 <b>Tampermonkey（油猴）</b> 插件（Edge/Chrome 应用商店搜 Tampermonkey）</li>' +
+      '<li><b>② 安装投诉脚本</b> —— 点下面「直接安装」，油猴会弹出安装框，点安装即可；如果没弹（或打开了代码页），改用「复制脚本全文」→ 油猴面板 → 添加新脚本 → 全选粘贴 → 保存</li>' +
+      '<li><b>③ 回黑水塘投诉</b> —— 到「黑水塘」点公告里的「🚨 一键投诉」→ 选理由 → 自动跳转豆瓣并批量投诉；投诉完回来在链接前打 ✓ 记战绩</li>' +
     '</ol>' +
     '<div class="row">' +
-      '<a class="btn" href="' + installUrl + '" target="_blank" rel="noopener">⬇ 直接安装脚本 v2.6.0</a>' +
+      '<a class="btn big" href="' + installUrl + '" target="_blank" rel="noopener">⬇ 第②步：直接安装脚本 v2.6.0</a>' +
       '<button class="btn ghost" data-act="copy-script-full">复制脚本全文</button>' +
       '<button class="btn ghost" data-act="download-script">下载到本地</button>' +
+      (firstTime ? '<button class="btn ghost" data-act="guide-done">✓ 我装好了，以后不再弹出</button>' : '') +
     '</div>' +
   '</details>';
 }
@@ -940,6 +944,12 @@ document.addEventListener('click', guard(async (e) => {
   if (act === 'goto-pool') {
     const t = document.getElementById('sec-pool');
     if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+  if (act === 'guide-done') {
+    localStorage.setItem('bp_guide_done', '1');
+    render();
+    tip('好的，教程已收起，随时点「🛠 第一次使用？」可以再看', 'ok');
     return;
   }
   if (act === 'copy-script-full') {
