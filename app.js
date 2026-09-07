@@ -25,6 +25,9 @@ const state = {
   apps: [],
   regs: [],
   audit: [],
+  userQ: '',       // 成员搜索关键字
+  userRole: 'all', // 成员角色筛选：all / staff(管理员) / mod(捞黑员) / member(执法者)
+  userPage: 1,     // 成员列表页码（每页 10 人）
   initialized: false,
   seenFindings: new Set(JSON.parse(localStorage.getItem('bp_seen_f') || '[]')),
   seenRegs: new Set(JSON.parse(localStorage.getItem('bp_seen_r') || '[]')),
@@ -484,6 +487,68 @@ function postCard(p) {
     '</div></div>';
 }
 
+/** 成员列表（搜索 + 角色筛选 + 分页，每页 10 人）；isAdmin/approver 决定按钮可见性 */
+const USER_PAGE_SIZE = 10;
+function userZoneHtml(isAdmin, approver) {
+  const users = state.users || [];
+  const ROLE_ORDER = { admin: 0, deputy: 1, mod: 2, member: 3 };
+  const q = (state.userQ || '').trim().toLowerCase();
+  let list = users.filter((u) => {
+    if (state.userRole === 'staff' && u.role !== 'admin' && u.role !== 'deputy') return false;
+    if (state.userRole === 'mod' && u.role !== 'mod') return false;
+    if (state.userRole === 'member' && u.role !== 'member') return false;
+    if (q && String(u.nick).toLowerCase().indexOf(q) === -1) return false;
+    return true;
+  });
+  list.sort((a, b) => (ROLE_ORDER[a.role] - ROLE_ORDER[b.role]) || (a.createdAt - b.createdAt));
+
+  const total = list.length;
+  const pages = Math.max(1, Math.ceil(total / USER_PAGE_SIZE));
+  if (state.userPage > pages) state.userPage = pages;
+  const page = list.slice((state.userPage - 1) * USER_PAGE_SIZE, state.userPage * USER_PAGE_SIZE);
+
+  const chips = [
+    ['all', '全部 ' + users.length],
+    ['staff', '管理员 ' + users.filter((u) => u.role === 'admin' || u.role === 'deputy').length],
+    ['mod', '捞黑员 ' + users.filter((u) => u.role === 'mod').length],
+    ['member', '执法者 ' + users.filter((u) => u.role === 'member').length],
+  ].map((c) =>
+    '<button class="chip' + (state.userRole === c[0] ? ' active' : '') + '" data-act="u-role" data-r="' + c[0] + '">' + c[1] + '</button>').join('');
+
+  let body;
+  if (!page.length) {
+    body = '<div class="empty" style="padding:12px 0">没有匹配的成员</div>';
+  } else {
+    body = page.map((u) => {
+      const btns = [];
+      if (isAdmin) btns.push('<button class="btn sm ghost" data-act="rename-user" data-nick="' + esc(u.nick) + '">✏️ 改昵称</button>');
+      if (u.role !== 'admin') {
+        if (approver && u.role === 'member') btns.push('<button class="btn sm" data-act="promote" data-nick="' + esc(u.nick) + '">提升为捞黑员</button>');
+        if (isAdmin && u.role !== 'deputy') btns.push('<button class="btn sm ghost" data-act="set-deputy" data-nick="' + esc(u.nick) + '">设为次管理员</button>');
+        if (approver && u.role === 'mod') btns.push('<button class="btn sm ghost" data-act="demote" data-nick="' + esc(u.nick) + '">降为执法者</button>');
+        if (isAdmin && u.role === 'deputy') btns.push('<button class="btn sm ghost" data-act="demote" data-nick="' + esc(u.nick) + '">卸任次管理员</button>');
+        btns.push('<button class="btn sm danger" data-act="remove-user" data-nick="' + esc(u.nick) + '">剔除</button>');
+      }
+      return '<div class="member-row">' +
+        '<div class="mu"><b>' + esc(u.nick) + '</b>' + roleBadge(u.role) +
+        '<span class="muted">' + fmtTime(u.createdAt) + '</span></div>' +
+        (btns.length ? '<div class="row" style="gap:5px;justify-content:flex-end">' + btns.join('') + '</div>' : '') +
+        '</div>';
+    }).join('');
+  }
+
+  const pager = pages > 1
+    ? '<div class="row" style="justify-content:space-between;margin-top:6px">' +
+      '<span class="muted">共 ' + total + ' 人 · 第 ' + state.userPage + '/' + pages + ' 页</span>' +
+      '<span class="row" style="gap:5px">' +
+      '<button class="btn sm ghost" data-act="u-page" data-d="-1"' + (state.userPage <= 1 ? ' disabled' : '') + '>‹ 上一页</button>' +
+      '<button class="btn sm ghost" data-act="u-page" data-d="1"' + (state.userPage >= pages ? ' disabled' : '') + '>下一页 ›</button>' +
+      '</span></div>'
+    : (total ? '<div class="muted" style="margin-top:4px">共 ' + total + ' 人</div>' : '');
+
+  return '<div class="row u-chips">' + chips + '</div>' + body + pager;
+}
+
 /** 投诉类型管理：单行编辑（emoji + 名称 + 自动勾选的理由复选框 + 删除） */
 function tagRow(t) {
   const reasons = t.reasons || [];
@@ -653,21 +718,9 @@ function viewAdmin() {
   html += '<div class="card"><h3>👥 成员管理</h3>' +
     '<div class="row"><input type="text" id="u-nick" placeholder="新执法者昵称"><input type="text" id="u-pass" placeholder="初始密码">' +
     '<button class="btn" id="b-adduser">新增执法者</button></div>' +
-    '<p class="hint">捞黑员可增加 / 剔除执法者；最高管理员与次管理员都可提升执法者为捞黑员（次管理员的任免只有最高管理员能操作，最多 2 人' + (isAdmin ? '，当前 ' + deputyCount + ' 人' : '') + '）。</p>' +
-    '<div style="margin-top:10px">' + (state.users || []).map((u) =>
-      '<div class="finding"><div class="u"><b>' + esc(u.nick) + '</b>' + roleBadge(u.role) +
-      '<div class="muted">加入于 ' + fmtTime(u.createdAt) + '</div></div>' +
-      ((u.role === 'admin' && !isAdmin) ? '' :
-        '<div class="row" style="flex-direction:column;gap:6px">' +
-        (isAdmin ? '<button class="btn sm ghost" data-act="rename-user" data-nick="' + esc(u.nick) + '">✏️ 改昵称</button>' : '') +
-        (u.role === 'admin' ? '' :
-        (approver && u.role === 'member' ? '<button class="btn sm" data-act="promote" data-nick="' + esc(u.nick) + '">提升为捞黑员</button>' : '') +
-        (isAdmin && u.role !== 'deputy' ? '<button class="btn sm ghost" data-act="set-deputy" data-nick="' + esc(u.nick) + '">设为次管理员</button>' : '') +
-        (approver && u.role === 'mod' ? '<button class="btn sm ghost" data-act="demote" data-nick="' + esc(u.nick) + '">降级为执法者</button>' : '') +
-        (isAdmin && u.role === 'deputy' ? '<button class="btn sm ghost" data-act="demote" data-nick="' + esc(u.nick) + '">卸任次管理员（降为执法者）</button>' : '') +
-        '<button class="btn sm danger" data-act="remove-user" data-nick="' + esc(u.nick) + '">剔除</button>') +
-        '</div>') +
-      '</div>').join('') + '</div></div>';
+    '<p class="hint" style="margin:4px 0 6px">捞黑员可增加 / 剔除执法者；最高管理员与次管理员都可提升执法者为捞黑员（次管理员的任免只有最高管理员能操作，最多 2 人' + (isAdmin ? '，当前 ' + deputyCount + ' 人' : '') + '）。</p>' +
+    '<div class="row" style="margin-bottom:6px"><input type="text" id="u-search" placeholder="🔍 搜索成员昵称" value="' + esc(state.userQ || '') + '" style="flex:1;min-width:150px"></div>' +
+    '<div id="user-zone">' + userZoneHtml(isAdmin, approver) + '</div></div>';
 
   if (approver) {
     const pend = (state.apps || []).filter((a) => a.status === 'pending');
@@ -685,7 +738,7 @@ function viewAdmin() {
   if (state.me.role === 'admin' || state.me.role === 'deputy') {
     const tags = tagList();
     html += '<div class="card"><h3>🗂 投诉类型管理</h3>' +
-      '<p class="hint">发布批次时的「主打投诉类型」、公告上的类型徽章、一键投诉自动勾选的理由都来自这里。同类型批次才会互相聚合，不混批。改完记得点「保存」。</p>' +
+      '<p class="hint">发布批次的「主打类型」、公告徽章、一键投诉自动勾选理由都来自这里；同类型批次才互相聚合。改完点「保存」。</p>' +
       '<div id="tag-rows">' + tags.map((t) => tagRow(t)).join('') + '</div>' +
       '<div class="row" style="margin-top:10px">' +
         '<button class="btn ghost sm" data-act="tag-add">＋ 新增类型</button>' +
@@ -1077,11 +1130,33 @@ function openSnapModal(l) {
 }
 
 /* ---------------- 事件 ---------------- */
+/* 成员搜索框：只刷新 #user-zone，保持输入焦点 */
+document.addEventListener('input', (e) => {
+  if (e.target && e.target.id === 'u-search') {
+    state.userQ = e.target.value;
+    state.userPage = 1;
+    const zone = document.getElementById('user-zone');
+    if (zone) zone.innerHTML = userZoneHtml(state.me && state.me.role === 'admin', canApprove());
+  }
+});
+
 document.addEventListener('click', guard(async (e) => {
   const el = e.target.closest('[data-act]');
   if (!el) return;
   const act = el.dataset.act;
 
+  if (act === 'u-role') {
+    state.userRole = el.dataset.r; state.userPage = 1;
+    const zone = document.getElementById('user-zone');
+    if (zone) zone.innerHTML = userZoneHtml(state.me.role === 'admin', canApprove());
+    return;
+  }
+  if (act === 'u-page') {
+    state.userPage += Number(el.dataset.d) || 0;
+    const zone = document.getElementById('user-zone');
+    if (zone) zone.innerHTML = userZoneHtml(state.me.role === 'admin', canApprove());
+    return;
+  }
   if (act === 'mode') { authMode = el.dataset.m; paintAuth(); return; }
   if (act === 'reg-status') {
     const nick = ($('#i-nick') ? $('#i-nick').value : '').trim();
