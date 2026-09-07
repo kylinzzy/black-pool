@@ -968,7 +968,6 @@ document.addEventListener('click', guard(async (e) => {
     return;
   }
   if (act === 'filter') { state.filter = el.dataset.f; render(); return; }
-  if (act === 'pool-tab') { state.poolTab = el.dataset.b; render(); return; }
 
   if (act === 'toggle') {
     await api('posts', { action: 'toggleLink', id: el.dataset.id, linkId: el.dataset.lid });
